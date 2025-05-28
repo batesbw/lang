@@ -8,6 +8,74 @@ An intelligent multi-agent system powered by LangChain and LangGraph that automa
 **Latest Milestone**: Enhanced FlowBuilderAgent with Natural Language Processing ✅  
 **Next Steps**: FlowTestAgent Implementation & Iterative Workflows
 
+## 🚀 Quick Start
+
+### Prerequisites
+```bash
+# Required environment variables
+ANTHROPIC_API_KEY=your_anthropic_api_key
+
+# Optional (for tracing)
+LANGSMITH_API_KEY=your_langsmith_api_key
+
+# Salesforce credentials (replace ORGALIAS with your org alias)
+SF_CONSUMER_KEY_ORGALIAS=your_consumer_key
+SF_CONSUMER_SECRET_ORGALIAS=your_consumer_secret
+SF_MY_DOMAIN_URL_ORGALIAS=https://your-domain.my.salesforce.com
+```
+
+### Installation
+```bash
+# Clone the repository
+git clone <repository>
+cd salesforce-agent-workforce
+
+# Create virtual environment
+python -m venv langgraph-env
+source langgraph-env/bin/activate  # On Windows: langgraph-env\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up environment variables
+cp environment_template.txt .env
+# Edit .env with your credentials
+```
+
+### 🎯 How to Run the System
+
+#### **Option 1: Quick Validation (No credentials needed)**
+```bash
+# Validate system structure
+python scripts/test_workflow_structure.py
+```
+
+#### **Option 2: Test Individual Agents (Anthropic API key only)**
+```bash
+# Test agents without Salesforce setup
+python scripts/simple_agent_test.py
+
+# Interactive demo of enhanced capabilities
+python scripts/demo_enhanced_workflow.py
+```
+
+#### **Option 3: Full End-to-End Workflow (Requires Salesforce credentials)**
+```bash
+# Set up Salesforce authentication first
+python scripts/setup_jwt_auth.py
+
+# Run the complete workflow
+python scripts/run_workflow.py YOUR_ORG_ALIAS
+```
+
+#### **Option 4: Visualize the System**
+```bash
+# Generate workflow diagrams
+python scripts/visualize_workflow.py
+```
+
+> 📁 **All executable scripts are now organized in the `scripts/` directory. See [`scripts/README.md`](scripts/README.md) for detailed information about each script.**
+
 ## 🚀 Vision
 
 Transform how Salesforce professionals work with Flows by providing:
@@ -21,7 +89,7 @@ Transform how Salesforce professionals work with Flows by providing:
 
 - **[PLANNING.md](PLANNING.md)**: Comprehensive project planning and multi-agent architecture
 - **[TASK.md](TASK.md)**: Detailed task breakdown and implementation roadmap
-- **[TASK_1_4_IMPLEMENTATION.md](TASK_1_4_IMPLEMENTATION.md)**: Task 1.4 implementation details
+- **[scripts/README.md](scripts/README.md)**: Complete guide to all executable scripts
 
 ## 🤖 Agent Workforce
 
@@ -94,52 +162,6 @@ The enhanced workflow automatically:
 - **Pattern-Based Error Detection**: Common Salesforce deployment errors
 - **Intelligent Repair Strategies**: Automatic fixes for access rights, version conflicts, etc.
 - **Best Practices Application**: Automatic application of Salesforce standards
-
-## 🚀 Quick Start
-
-### Prerequisites
-```bash
-# Required environment variables
-ANTHROPIC_API_KEY=your_anthropic_api_key
-
-# Optional (for tracing)
-LANGSMITH_API_KEY=your_langsmith_api_key
-
-# Salesforce credentials (replace ORGALIAS with your org alias)
-SF_CONSUMER_KEY_ORGALIAS=your_consumer_key
-SF_CONSUMER_SECRET_ORGALIAS=your_consumer_secret
-SF_MY_DOMAIN_URL_ORGALIAS=https://your-domain.my.salesforce.com
-```
-
-### Installation
-```bash
-# Clone the repository
-git clone <repository>
-cd salesforce-agent-workforce
-
-# Create virtual environment
-python -m venv langgraph-env
-source langgraph-env/bin/activate  # On Windows: langgraph-env\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-cp environment_template.txt .env
-# Edit .env with your credentials
-```
-
-### Run the Enhanced Workflow
-```bash
-# Using the enhanced demo (recommended)
-python demo_enhanced_workflow.py
-
-# Test enhanced capabilities
-python test_enhanced_flow_builder.py
-
-# Or run the main workflow
-python run_workflow.py MYSANDBOX
-```
 
 ### Example Enhanced Output
 ```
@@ -272,19 +294,22 @@ Access your traces at: https://smith.langchain.com/
 
 ## 🧪 Testing
 
-### Enhanced Testing Options
+### Available Test Scripts
 ```bash
-# Test enhanced FlowBuilderAgent capabilities
-python test_enhanced_flow_builder.py
+# System validation (no credentials needed)
+python scripts/test_workflow_structure.py
 
-# Demo enhanced workflow
-python demo_enhanced_workflow.py
+# Individual agent testing (Anthropic API key only)
+python scripts/simple_agent_test.py
 
-# Test workflow structure
-python test_workflow_structure.py
+# Enhanced agent capabilities (Anthropic API key only)
+python scripts/test_enhanced_flow_builder.py
 
-# Test individual components
-python -m pytest tests/  # When test suite is available
+# Interactive demo (Anthropic API key only)
+python scripts/demo_enhanced_workflow.py
+
+# Full workflow visualization (no credentials needed)
+python scripts/visualize_workflow.py
 ```
 
 ## 🤝 Contributing
@@ -301,7 +326,7 @@ We welcome contributions in:
 ### Project Documentation
 - [Planning Document](PLANNING.md) - Overall architecture and vision
 - [Task Breakdown](TASK.md) - Detailed implementation roadmap
-- [Task 1.4 Implementation](TASK_1_4_IMPLEMENTATION.md) - Current workflow details
+- [Scripts Guide](scripts/README.md) - Complete guide to all executable scripts
 
 ### Salesforce Resources
 - [Flow Builder Guide](https://help.salesforce.com/s/articleView?id=sf.flow.htm)

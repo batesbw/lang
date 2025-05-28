@@ -17,7 +17,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from tools.rag_tools import rag_manager
+from src.tools.rag_tools import rag_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,18 +58,18 @@ CREATE TABLE IF NOT EXISTS flow_knowledge_base (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     content TEXT NOT NULL,
     metadata JSONB,
-    embedding VECTOR(3072), -- text-embedding-3-large uses 3072 dimensions
+    embedding VECTOR(1536), -- text-embedding-3-small uses 1536 dimensions (compatible with ivfflat)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create index for vector similarity search
+-- Create index for vector similarity search using HNSW (better for higher dimensions)
 CREATE INDEX IF NOT EXISTS flow_knowledge_base_embedding_idx 
-ON flow_knowledge_base USING ivfflat (embedding vector_cosine_ops);
+ON flow_knowledge_base USING hnsw (embedding vector_cosine_ops);
 
 -- Create function for similarity search
 CREATE OR REPLACE FUNCTION match_flow_documents (
-    query_embedding VECTOR(3072),
+    query_embedding VECTOR(1536),
     filter JSONB DEFAULT '{}',
     match_threshold FLOAT DEFAULT 0.78,
     match_count INT DEFAULT 10
@@ -272,8 +272,8 @@ def setup_sample_repository():
     # You can customize this to point to your own repository
     sample_repos = [
         {
-            "owner": "trailheadapps",
-            "repo": "dreamhouse-lwc",
+            "owner": "flows",
+            "repo": "batesbw",
             "description": "Salesforce sample application with flows"
         }
         # Add more repositories as needed

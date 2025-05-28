@@ -6,10 +6,10 @@ This script provides an easy way to run the linear workflow:
 START -> AuthenticationAgent -> FlowBuilderAgent -> DeploymentAgent -> END
 
 Usage:
-    python run_workflow.py <org_alias>
+    python scripts/run_workflow.py <org_alias>
     
 Example:
-    python run_workflow.py MYSANDBOX
+    python scripts/run_workflow.py MYSANDBOX
 """
 
 import sys
@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 
 # Add src to Python path so we can import our modules
-src_path = Path(__file__).parent / "src"
+src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 from src.main_orchestrator import run_workflow
@@ -31,9 +31,9 @@ def main():
     if len(sys.argv) < 2:
         print("❌ Error: Org alias is required")
         print("\nUsage:")
-        print("  python run_workflow.py <org_alias>")
+        print("  python scripts/run_workflow.py <org_alias>")
         print("\nExample:")
-        print("  python run_workflow.py MYSANDBOX")
+        print("  python scripts/run_workflow.py MYSANDBOX")
         print("\nMake sure you have the following environment variables set:")
         print("  - ANTHROPIC_API_KEY")
         print("  - LANGSMITH_API_KEY (optional, for tracing)")

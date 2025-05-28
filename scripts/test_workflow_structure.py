@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-Test script to validate the LangGraph workflow structure.
+LangGraph Workflow Validation Suite
 
-This script tests the workflow graph construction and validates that all nodes
-and edges are properly configured without requiring actual Salesforce credentials.
+This script validates the structure and configuration of the Salesforce Agent Workforce
+LangGraph workflow without requiring actual execution or external API calls.
 """
 
 import sys
 from pathlib import Path
 
-# Add src to Python path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+# Add src to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.main_orchestrator import create_workflow
 from src.state.agent_workforce_state import AgentWorkforceState

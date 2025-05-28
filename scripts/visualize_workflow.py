@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Script to visualize the LangGraph workflow and save it as an image.
-This works on Linux and generates a visual representation of the workflow.
+Workflow Visualization Script
+
+This script generates visual representations of the Salesforce Agent Workforce
+LangGraph workflow structure, showing nodes, edges, and agent relationships.
 """
 
 import sys
 from pathlib import Path
 
-# Add src to Python path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
+# Add src to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.main_orchestrator import create_workflow
 
