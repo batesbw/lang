@@ -7,4 +7,10 @@ simple-salesforce==1.12.4
 xmltodict==0.13.0
 pydantic==2.5.0
 python-dotenv==1.0.0
-requests==2.31.0 
+requests==2.31.0
+# RAG Dependencies
+supabase==2.3.4
+langchain-openai==0.1.7
+vecs==0.4.0
+pgvector==0.2.4
+PyGithub==2.1.1 

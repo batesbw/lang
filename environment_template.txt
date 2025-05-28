@@ -82,3 +82,96 @@ SF_INSTANCE_URL_E2E_TEST_ORG="https://your-test-domain--sandbox.my.salesforce.co
 #    - IP Relaxation: Relax IP restrictions (or configure as needed)
 # 6. Manage > Manage Profiles/Permission Sets:
 #    - Add the user's profile or create a permission set for the user 
+
+# Salesforce Solution Implementation Agent Workforce Environment Configuration
+# Copy this file to .env and fill in your actual values
+
+# ============================================================================
+# SALESFORCE CONFIGURATION
+# ============================================================================
+
+# Salesforce instance URL (e.g., https://your-domain.my.salesforce.com)
+SALESFORCE_INSTANCE_URL=
+
+# Salesforce username for authentication
+SALESFORCE_USERNAME=
+
+# Salesforce password
+SALESFORCE_PASSWORD=
+
+# Salesforce security token (append to password if using password auth)
+SALESFORCE_SECURITY_TOKEN=
+
+# ============================================================================
+# JWT AUTHENTICATION (Alternative to username/password)
+# ============================================================================
+
+# Consumer Key from your Connected App
+SALESFORCE_CONSUMER_KEY=
+
+# Path to your private key file for JWT authentication
+SALESFORCE_PRIVATE_KEY_PATH=./certs/server.key
+
+# ============================================================================
+# LANGCHAIN & AI CONFIGURATION
+# ============================================================================
+
+# LangSmith configuration for observability
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+LANGCHAIN_API_KEY=
+LANGCHAIN_PROJECT=salesforce-agent-workforce
+
+# ============================================================================
+# RAG (RETRIEVAL-AUGMENTED GENERATION) CONFIGURATION
+# ============================================================================
+
+# OpenAI API key for embeddings (required for RAG)
+OPENAI_API_KEY=
+
+# Supabase configuration for vector store
+SUPABASE_URL=
+SUPABASE_SERVICE_KEY=
+
+# GitHub token for accessing sample flow repositories
+GITHUB_TOKEN=
+
+# ============================================================================
+# OPTIONAL CONFIGURATION
+# ============================================================================
+
+# Log level (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL=INFO
+
+# Environment (development, staging, production)
+ENVIRONMENT=development
+
+# ============================================================================
+# SETUP INSTRUCTIONS
+# ============================================================================
+
+# 1. SALESFORCE SETUP:
+#    - Create a Connected App in Salesforce
+#    - Generate JWT certificates (see JWT_SETUP_README.md)
+#    - Configure OAuth settings
+#    - Note your Consumer Key and instance URL
+
+# 2. LANGCHAIN SETUP:
+#    - Sign up for LangSmith at https://smith.langchain.com
+#    - Create a new project
+#    - Get your API key from the settings
+
+# 3. RAG SETUP:
+#    - Get OpenAI API key from https://platform.openai.com
+#    - Create Supabase project at https://supabase.com
+#    - Get Supabase URL and service key from project settings
+#    - Create GitHub personal access token for repository access
+
+# 4. ANTHROPIC SETUP:
+#    - Sign up for Anthropic Claude API
+#    - Get your API key from the console
+
+# 5. GITHUB SETUP (for sample flows):
+#    - Create GitHub personal access token
+#    - Grant repository read access
+#    - Use for syncing sample flow repositories 
