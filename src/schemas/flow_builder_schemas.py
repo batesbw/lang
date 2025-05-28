@@ -1,29 +1,153 @@
-from typing import Optional
+from typing import Optional, List, Dict, Any, Literal, Union
 from pydantic import BaseModel, Field
+from enum import Enum
+
+class FlowType(str, Enum):
+    """Types of Salesforce Flows"""
+    SCREEN_FLOW = "Screen Flow"
+    RECORD_TRIGGERED = "Record-Triggered Flow"
+    SCHEDULED = "Scheduled Flow"
+    AUTOLAUNCHED = "Autolaunched Flow"
+    PLATFORM_EVENT = "Platform Event-Triggered Flow"
+
+class FlowElementType(str, Enum):
+    """Types of Flow Elements"""
+    SCREEN = "screens"
+    DECISION = "decisions"
+    ASSIGNMENT = "assignments"
+    GET_RECORDS = "recordLookups"
+    CREATE_RECORDS = "recordCreates"
+    UPDATE_RECORDS = "recordUpdates"
+    DELETE_RECORDS = "recordDeletes"
+    LOOP = "loops"
+    ACTION_CALL = "actionCalls"
+    SUBFLOW = "subflows"
+    WAIT = "waits"
+    FAULT_CONNECTOR = "faultConnectors"
+
+class FlowTriggerType(str, Enum):
+    """Flow trigger types for record-triggered flows"""
+    RECORD_BEFORE_SAVE = "RecordBeforeSave"
+    RECORD_AFTER_SAVE = "RecordAfterSave"
+    RECORD_BEFORE_DELETE = "RecordBeforeDelete"
+    RECORD_AFTER_DELETE = "RecordAfterDelete"
+
+class UserStory(BaseModel):
+    """Represents a user story for flow development"""
+    title: str = Field(..., description="Title of the user story")
+    description: str = Field(..., description="As a [user], I want [goal] so that [benefit]")
+    acceptance_criteria: List[str] = Field(..., description="List of acceptance criteria that define when the story is complete")
+    priority: Literal["Critical", "High", "Medium", "Low"] = Field(default="Medium", description="Priority level of the user story")
+    business_context: Optional[str] = Field(None, description="Additional business context or background")
+    affected_objects: List[str] = Field(default_factory=list, description="Salesforce objects that will be affected")
+    user_personas: List[str] = Field(default_factory=list, description="Types of users who will interact with this flow")
+
+class FlowRequirement(BaseModel):
+    """Detailed flow requirements derived from user stories"""
+    flow_type: FlowType = Field(..., description="Type of flow to create")
+    trigger_object: Optional[str] = Field(None, description="Object that triggers the flow (for record-triggered flows)")
+    trigger_type: Optional[FlowTriggerType] = Field(None, description="When the flow should trigger")
+    entry_criteria: Optional[str] = Field(None, description="Conditions that must be met for the flow to run")
+    flow_elements_needed: List[FlowElementType] = Field(..., description="Types of flow elements required")
+    data_operations: List[str] = Field(default_factory=list, description="Data operations needed (create, read, update, delete)")
+    business_logic: List[str] = Field(default_factory=list, description="Business rules and logic to implement")
+    error_handling: List[str] = Field(default_factory=list, description="Error scenarios to handle")
+    integration_points: List[str] = Field(default_factory=list, description="External systems or APIs to integrate with")
+
+class FlowElement(BaseModel):
+    """Represents a flow element with its configuration"""
+    element_type: FlowElementType = Field(..., description="Type of flow element")
+    name: str = Field(..., description="API name of the element")
+    label: str = Field(..., description="Display label for the element")
+    description: Optional[str] = Field(None, description="Description of what this element does")
+    location_x: int = Field(default=176, description="X coordinate for element positioning")
+    location_y: int = Field(default=134, description="Y coordinate for element positioning")
+    connector_target: Optional[str] = Field(None, description="Next element to connect to")
+    fault_connector_target: Optional[str] = Field(None, description="Element to connect to on error")
+    configuration: Dict[str, Any] = Field(default_factory=dict, description="Element-specific configuration")
+
+class FlowVariable(BaseModel):
+    """Represents a flow variable"""
+    name: str = Field(..., description="API name of the variable")
+    data_type: str = Field(..., description="Data type (Text, Number, Boolean, Date, etc.)")
+    is_collection: bool = Field(default=False, description="Whether this is a collection variable")
+    is_input: bool = Field(default=False, description="Whether this is an input variable")
+    is_output: bool = Field(default=False, description="Whether this is an output variable")
+    default_value: Optional[str] = Field(None, description="Default value for the variable")
+    description: Optional[str] = Field(None, description="Description of the variable's purpose")
 
 class FlowBuildRequest(BaseModel):
-    """
-    Defines the input for requesting a basic Salesforce Flow creation.
-    For initial implementation, this will generate a simple screen flow
-    with one screen and a display text component.
-    """
-    flow_api_name: str = Field(..., description="API name for the Flow, e.g., MySimpleScreenFlow_AutoGen", example="MySimpleScreenFlow_AutoGen")
-    flow_label: str = Field(..., description="Label for the Flow, e.g., My Simple Screen Flow AutoGen", example="My Simple Screen Flow AutoGen")
-    flow_description: Optional[str] = Field(None, description="Optional description for the Flow.", example="A simple screen flow generated by the agent.")
+    """Enhanced request for building a Salesforce Flow"""
+    # Basic flow information
+    flow_api_name: str = Field(..., description="API name for the Flow", example="ProcessLeadConversion")
+    flow_label: str = Field(..., description="Label for the Flow", example="Process Lead Conversion")
+    flow_description: Optional[str] = Field(None, description="Description of the Flow's purpose")
+    target_api_version: str = Field(default="59.0", description="Salesforce API version")
     
-    screen_api_name: str = Field(..., description="API name for the screen element.", example="Screen1")
-    screen_label: str = Field(..., description="Label for the screen element.", example="WelcomeScreen")
+    # User story and requirements
+    user_story: Optional[UserStory] = Field(None, description="User story that drives this flow")
+    requirements: Optional[FlowRequirement] = Field(None, description="Detailed flow requirements")
     
-    display_text_api_name: str = Field(..., description="API name for the display text component on the screen.", example="WelcomeText")
-    display_text_content: str = Field(..., description="The content of the display text component.", example="Hello from your automatically generated Flow!")
+    # Flow configuration
+    flow_type: FlowType = Field(default=FlowType.SCREEN_FLOW, description="Type of flow to create")
+    trigger_object: Optional[str] = Field(None, description="Object that triggers the flow")
+    trigger_type: Optional[FlowTriggerType] = Field(None, description="When the flow should trigger")
+    entry_criteria: Optional[str] = Field(None, description="Entry criteria for the flow")
     
-    target_api_version: str = Field(default="59.0", description="Salesforce API version for the Flow metadata.", example="59.0")
+    # Flow elements and structure
+    flow_elements: List[FlowElement] = Field(default_factory=list, description="Flow elements to include")
+    flow_variables: List[FlowVariable] = Field(default_factory=list, description="Flow variables to create")
+    
+    # Advanced options
+    run_in_system_mode: bool = Field(default=False, description="Whether to run in system mode")
+    enable_bulk_processing: bool = Field(default=True, description="Enable bulk processing for record-triggered flows")
+    
+    # Legacy support for simple flows
+    screen_api_name: Optional[str] = Field(None, description="API name for simple screen element")
+    screen_label: Optional[str] = Field(None, description="Label for simple screen element")
+    display_text_api_name: Optional[str] = Field(None, description="API name for simple display text")
+    display_text_content: Optional[str] = Field(None, description="Content for simple display text")
+
+class FlowValidationError(BaseModel):
+    """Represents a flow validation error"""
+    error_type: str = Field(..., description="Type of validation error")
+    element_name: Optional[str] = Field(None, description="Flow element that caused the error")
+    error_message: str = Field(..., description="Detailed error message")
+    suggested_fix: Optional[str] = Field(None, description="Suggested fix for the error")
+    severity: Literal["Error", "Warning", "Info"] = Field(default="Error", description="Severity level")
 
 class FlowBuildResponse(BaseModel):
-    """
-    Defines the output after a Flow build attempt.
-    """
-    success: bool
-    input_request: FlowBuildRequest # Echo back the request for clarity and context
-    flow_xml: Optional[str] = Field(None, description="The generated Flow XML string if successful.")
-    error_message: Optional[str] = Field(None, description="Error message if Flow building failed.") 
+    """Enhanced response after a Flow build attempt"""
+    success: bool = Field(..., description="Whether the flow was built successfully")
+    input_request: FlowBuildRequest = Field(..., description="Echo back the request for context")
+    flow_xml: Optional[str] = Field(None, description="Generated Flow XML if successful")
+    flow_definition_xml: Optional[str] = Field(None, description="Flow Definition XML for activation control")
+    
+    # Validation and errors
+    validation_errors: List[FlowValidationError] = Field(default_factory=list, description="Validation errors found")
+    error_message: Optional[str] = Field(None, description="Primary error message if build failed")
+    
+    # Metadata and insights
+    elements_created: List[str] = Field(default_factory=list, description="List of flow elements created")
+    variables_created: List[str] = Field(default_factory=list, description="List of variables created")
+    best_practices_applied: List[str] = Field(default_factory=list, description="Best practices automatically applied")
+    recommendations: List[str] = Field(default_factory=list, description="Recommendations for improvement")
+    
+    # Deployment information
+    deployment_notes: Optional[str] = Field(None, description="Notes about deployment considerations")
+    dependencies: List[str] = Field(default_factory=list, description="Dependencies that need to be deployed first")
+
+class FlowRepairRequest(BaseModel):
+    """Request to repair a flow based on deployment or test errors"""
+    flow_xml: str = Field(..., description="Current flow XML that needs repair")
+    error_messages: List[str] = Field(..., description="Error messages from deployment or testing")
+    error_context: Optional[str] = Field(None, description="Additional context about where errors occurred")
+    target_org_info: Optional[Dict[str, Any]] = Field(None, description="Information about target org (API version, features, etc.)")
+
+class FlowRepairResponse(BaseModel):
+    """Response after attempting to repair a flow"""
+    success: bool = Field(..., description="Whether the repair was successful")
+    repaired_flow_xml: Optional[str] = Field(None, description="Repaired flow XML")
+    repairs_made: List[str] = Field(default_factory=list, description="List of repairs that were made")
+    remaining_issues: List[str] = Field(default_factory=list, description="Issues that could not be automatically fixed")
+    repair_explanation: Optional[str] = Field(None, description="Explanation of the repair process") 

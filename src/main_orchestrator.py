@@ -11,7 +11,7 @@ from langsmith import Client
 # Project imports
 from src.state.agent_workforce_state import AgentWorkforceState
 from src.agents.authentication_agent import run_authentication_agent
-from src.agents.flow_builder_agent import run_flow_builder_agent
+from src.agents.enhanced_flow_builder_agent import run_flow_builder_agent
 from src.agents.deployment_agent import run_deployment_agent
 from src.schemas.auth_schemas import AuthenticationRequest
 from src.schemas.flow_builder_schemas import FlowBuildRequest

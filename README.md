@@ -4,14 +4,15 @@ An intelligent multi-agent system powered by LangChain and LangGraph that automa
 
 ## 🎯 Project Status
 
-**Current Phase**: Phase 1 - Foundation Complete ✅  
-**Latest Milestone**: Task 1.4 - Initial LangGraph Orchestration ✅  
-**Next Steps**: Phase 2 - Core Flow Lifecycle & Enhanced Agents
+**Current Phase**: Phase 2 - Enhanced FlowBuilderAgent Complete ✅  
+**Latest Milestone**: Enhanced FlowBuilderAgent with Natural Language Processing ✅  
+**Next Steps**: FlowTestAgent Implementation & Iterative Workflows
 
 ## 🚀 Vision
 
 Transform how Salesforce professionals work with Flows by providing:
 - **Intelligent Automation**: End-to-end Flow development from requirements to deployment
+- **Natural Language Processing**: Convert user stories into production-ready Flows
 - **Multi-Agent Collaboration**: Specialized agents working together seamlessly
 - **Expert Knowledge**: Built-in Salesforce best practices and optimization
 - **Continuous Testing**: Automated validation and testing workflows
@@ -24,17 +25,22 @@ Transform how Salesforce professionals work with Flows by providing:
 
 ## 🤖 Agent Workforce
 
-### Current Agents (Phase 1 Complete)
+### Current Agents (Phase 1 & 2 Complete)
 
 #### 🔐 AuthenticationAgent
 - **Purpose**: Secure Salesforce authentication
 - **Capabilities**: JWT/OAuth flows, session management
 - **Status**: ✅ Implemented
 
-#### 🏗️ FlowBuilderAgent  
-- **Purpose**: Generate Salesforce Flow XML from requirements
-- **Capabilities**: Basic Flow XML generation, screen flows
-- **Status**: ✅ Implemented
+#### 🏗️ Enhanced FlowBuilderAgent ⭐ NEW!
+- **Purpose**: Generate sophisticated Salesforce Flows from natural language
+- **Capabilities**: 
+  - 🧠 Natural language user story processing
+  - 📚 RAG-powered best practices knowledge base
+  - 🔧 Advanced XML generation (all flow types)
+  - 🛠️ Automated error detection and repair
+  - 💡 Comprehensive implementation guidance
+- **Status**: ✅ Enhanced in Phase 2
 
 #### 🚀 DeploymentAgent
 - **Purpose**: Deploy Flows to Salesforce orgs
@@ -46,20 +52,48 @@ Transform how Salesforce professionals work with Flows by providing:
 #### 🧪 FlowTestAgent
 - **Purpose**: Automated Flow testing and validation
 - **Capabilities**: API testing, UI testing, assertion checking
-- **Status**: 📋 Planned
+- **Status**: 📋 Next Priority
 
 ## 🔄 Current Workflow
 
-**Linear Workflow (Task 1.4)**:
+**Enhanced Workflow (Phase 2)**:
 ```
-START → AuthenticationAgent → FlowBuilderAgent → DeploymentAgent → END
+START → AuthenticationAgent → Enhanced FlowBuilderAgent → DeploymentAgent → END
 ```
 
-The workflow automatically:
+The enhanced workflow automatically:
 1. Authenticates to your Salesforce org
-2. Generates a simple test Flow XML
-3. Deploys the Flow to Salesforce
-4. Reports success/failure with detailed logging
+2. **NEW**: Processes natural language requirements using advanced NLP
+3. **NEW**: Consults knowledge base for Salesforce best practices
+4. **NEW**: Generates sophisticated Flow XML with multiple elements
+5. **NEW**: Validates and repairs common deployment errors
+6. Deploys the Flow to Salesforce with comprehensive guidance
+7. Reports success/failure with detailed recommendations
+
+## 🌟 Phase 2 Enhancements
+
+### Enhanced FlowBuilderAgent Features
+
+#### 🧠 Natural Language Processing
+- **User Story Parser**: Converts natural language requirements into structured flow specifications
+- **Acceptance Criteria Analysis**: Automatically identifies flow elements needed
+- **Business Context Understanding**: Considers organizational context in flow design
+
+#### 📚 RAG Knowledge Base
+- **15+ Best Practice Categories**: Flow naming, performance, security, testing, etc.
+- **Semantic Search**: Context-aware retrieval of relevant guidance
+- **Comprehensive Coverage**: Record-triggered flows, screen flows, error handling, and more
+
+#### 🔧 Advanced XML Generation
+- **Multiple Flow Types**: Screen, Record-Triggered, Scheduled, Platform Event flows
+- **Complex Elements**: Decisions, Loops, Get Records, DML operations, Assignments
+- **Proper Validation**: Extensive error checking with detailed suggestions
+- **Flow Definition Support**: Automatic activation control
+
+#### 🛠️ Automated Repair System
+- **Pattern-Based Error Detection**: Common Salesforce deployment errors
+- **Intelligent Repair Strategies**: Automatic fixes for access rights, version conflicts, etc.
+- **Best Practices Application**: Automatic application of Salesforce standards
 
 ## 🚀 Quick Start
 
@@ -95,19 +129,19 @@ cp environment_template.txt .env
 # Edit .env with your credentials
 ```
 
-### Run the Workflow
+### Run the Enhanced Workflow
 ```bash
-# Using the CLI script (recommended)
+# Using the enhanced demo (recommended)
+python demo_enhanced_workflow.py
+
+# Test enhanced capabilities
+python test_enhanced_flow_builder.py
+
+# Or run the main workflow
 python run_workflow.py MYSANDBOX
-
-# Or directly
-python src/main_orchestrator.py MYSANDBOX
-
-# Validate workflow structure
-python test_workflow_structure.py
 ```
 
-### Example Output
+### Example Enhanced Output
 ```
 🚀 Starting Salesforce Agent Workforce for org: MYSANDBOX
 ============================================================
@@ -115,25 +149,40 @@ python test_workflow_structure.py
 === AUTHENTICATION NODE ===
 ✅ Authentication successful
 
-=== FLOW BUILDER NODE ===
-✅ Flow XML generated: AgentGeneratedTestFlow
+=== ENHANCED FLOW BUILDER NODE ===
+Step 1: Parsing user story into flow requirements...
+Step 2: Consulting knowledge base for best practices...
+Step 3: Designing flow structure...
+Step 4: Generating flow XML...
+Step 5: Validating and repairing flow...
+Step 6: Adding implementation guidance...
+✅ Enhanced Flow generated: Lead_Qualification_Flow
+📝 Elements Created: 5
+🎯 Best Practices Applied: 12
+💡 Recommendations: 8
 
 === DEPLOYMENT NODE ===
 ✅ Deployment successful: 0Af...
 
-📊 WORKFLOW SUMMARY:
-✅ Authentication: SUCCESS
-✅ Flow Building: SUCCESS  
-✅ Deployment: SUCCESS
+📊 ENHANCED WORKFLOW RESULTS:
+✅ Enhanced Flow Building Results:
+  📋 Flow Name: Lead_Qualification_Flow
+  📝 Elements Created: 5
+  🎯 Best Practices Applied: 12
+  💡 Recommendations: 8
 ```
 
 ## 🏗️ Architecture
 
-### Multi-Agent System
+### Enhanced Multi-Agent System
 ```
 LangGraph Orchestrator
 ├── AuthenticationAgent (Salesforce Auth)
-├── FlowBuilderAgent (XML Generation)
+├── Enhanced FlowBuilderAgent ⭐
+│   ├── UserStoryParserTool (NLP)
+│   ├── FlowKnowledgeRAGTool (Best Practices)
+│   ├── AdvancedFlowXmlGeneratorTool (XML Generation)
+│   └── FlowRepairTool (Error Handling)
 ├── DeploymentAgent (Metadata Deployment)
 └── [Future: FlowTestAgent, ApexGeneratorAgent, etc.]
 ```
@@ -145,6 +194,8 @@ LangGraph Orchestrator
 - **Claude (Anthropic)**: Natural language processing and reasoning
 - **simple-salesforce**: Salesforce API integration
 - **xmltodict**: Flow metadata parsing and generation
+- **InMemoryVectorStore**: RAG knowledge base storage
+- **OpenAI Embeddings**: Semantic search capabilities
 
 ## 📊 Implementation Progress
 
@@ -154,9 +205,16 @@ LangGraph Orchestrator
 - [x] **Task 1.3**: DeploymentAgent implementation
 - [x] **Task 1.4**: Initial LangGraph orchestration (linear workflow)
 
-### 📋 Phase 2: Core Flow Lifecycle (Next)
+### ✅ Phase 2: Enhanced FlowBuilderAgent (Complete)
+- [x] **Enhanced Schemas**: Comprehensive data models for complex flows
+- [x] **RAG Knowledge Base**: 15+ categories of Salesforce Flow best practices
+- [x] **Advanced XML Generator**: Support for all flow types and elements
+- [x] **User Story Parser**: Natural language to flow requirements
+- [x] **Flow Repair Tool**: Automated error detection and repair
+- [x] **Enhanced Agent**: Orchestrated workflow with all tools
+
+### 📋 Phase 2: Remaining Tasks (Next)
 - [ ] **Task 2.1**: FlowTestAgent (API-based testing)
-- [ ] **Task 2.2**: FlowBuilderAgent enhancements (NL processing, RAG)
 - [ ] **Task 2.3**: Iterative build-deploy-test loops
 
 ### 🔮 Phase 3: Advanced Capabilities
@@ -166,28 +224,46 @@ LangGraph Orchestrator
 
 ## 🎯 Use Cases
 
-### Current Capabilities
-- **Automated Flow Deployment**: "Deploy a simple test Flow to my sandbox"
-- **End-to-End Workflow**: Complete authentication → build → deploy cycle
-- **Error Handling**: Comprehensive error reporting and recovery
+### Current Enhanced Capabilities
+- **Natural Language Flow Creation**: "Create a lead qualification flow that updates status based on revenue and employee count"
+- **Intelligent Flow Design**: Automatic application of Salesforce best practices
+- **Complex Flow Generation**: Multi-element flows with decisions, loops, and DML operations
+- **Automated Error Handling**: Detection and repair of common deployment issues
+- **Production-Ready Output**: Comprehensive validation and deployment guidance
+
+### Example User Stories Supported
+```
+"As a sales manager, I want to automatically qualify leads based on 
+revenue and employee count so that my team can focus on high-value prospects"
+
+"As a customer success manager, I want a guided onboarding flow for new 
+customers to collect their preferences and setup requirements"
+
+"As an operations manager, I want to automate approval processes for 
+expense reports based on amount and department rules"
+```
 
 ### Planned Capabilities (Phase 2+)
-- **Natural Language Flow Creation**: "Create a lead qualification Flow"
 - **Automated Testing**: "Test this Flow with various input scenarios"
 - **Flow Optimization**: "Analyze and optimize this Flow for performance"
+- **Iterative Refinement**: Continuous improvement based on test results
 
 ## 📈 Success Metrics
 
+- **Enhanced Flow Quality**: Production-ready flows with best practices applied
+- **Natural Language Processing**: 95%+ accurate requirement interpretation
+- **Error Prevention**: Automated detection and repair of common issues
+- **Knowledge Integration**: Comprehensive best practices application
 - **Workflow Success Rate**: 95%+ successful end-to-end executions
-- **Error Recovery**: Intelligent retry and repair mechanisms
-- **Performance**: Sub-30 second complete workflow execution
-- **Observability**: Complete traceability via LangSmith
 
 ## 🔍 Observability
 
 ### LangSmith Integration
-When configured, the system provides:
-- Complete workflow execution traces
+When configured, the enhanced system provides:
+- Complete workflow execution traces with enhanced agent steps
+- Natural language processing analysis
+- Knowledge base query tracking
+- XML generation and repair process visibility
 - Agent-level performance metrics
 - Error analysis and debugging
 - Token usage tracking
@@ -196,21 +272,27 @@ Access your traces at: https://smith.langchain.com/
 
 ## 🧪 Testing
 
-### Workflow Validation
+### Enhanced Testing Options
 ```bash
+# Test enhanced FlowBuilderAgent capabilities
+python test_enhanced_flow_builder.py
+
+# Demo enhanced workflow
+python demo_enhanced_workflow.py
+
 # Test workflow structure
 python test_workflow_structure.py
 
-# Test individual agents (when credentials are configured)
-python src/agents/authentication_agent.py
+# Test individual components
 python -m pytest tests/  # When test suite is available
 ```
 
 ## 🤝 Contributing
 
 We welcome contributions in:
-- **Agent Development**: New specialized agents
-- **Tool Enhancement**: Improved Salesforce integration
+- **Agent Development**: New specialized agents (FlowTestAgent next!)
+- **Tool Enhancement**: Improved Salesforce integration and NLP capabilities
+- **Knowledge Base**: Additional best practices and patterns
 - **Testing**: Comprehensive test coverage
 - **Documentation**: Examples and best practices
 
@@ -238,3 +320,5 @@ This project is for educational and professional development purposes. Please en
 ---
 
 **Ready to revolutionize Salesforce Flow development with AI agents? 🚀**
+
+*Now with enhanced natural language processing and intelligent flow generation!*
