@@ -15,17 +15,20 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
     and updates the state with a DeploymentResponse.
     """
     print("----- DEPLOYMENT AGENT -----")
-    deployment_request: Optional[DeploymentRequest] = state.get("current_deployment_request")
+    deployment_request_dict = state.get("current_deployment_request")
     
     response_updates = {}
 
-    if deployment_request and isinstance(deployment_request, DeploymentRequest):
-        print(f"Processing DeploymentRequest ID: {deployment_request.request_id}")
-        print(f"Flow Name to deploy: {deployment_request.flow_name}")
-
-        tool = SalesforceDeployerTool()
-        
+    if deployment_request_dict:
         try:
+            # Convert dict back to Pydantic model
+            deployment_request = DeploymentRequest(**deployment_request_dict)
+            
+            print(f"Processing DeploymentRequest ID: {deployment_request.request_id}")
+            print(f"Flow Name to deploy: {deployment_request.flow_name}")
+
+            tool = SalesforceDeployerTool()
+            
             # Call the tool's _run method directly with the DeploymentRequest
             deployment_response: DeploymentResponse = tool._run(deployment_request)
             
@@ -38,36 +41,28 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
                 if deployment_response.component_errors:
                     print(f"  Component Errors: {deployment_response.component_errors}")
 
-            response_updates["current_deployment_response"] = deployment_response
+            # Convert response to dict for state storage
+            response_updates["current_deployment_response"] = deployment_response.model_dump()
             response_updates["current_deployment_request"] = None # Clear the request
 
         except Exception as e:
             # This catch is for unexpected errors in the agent/tool interaction itself,
             # not for deployment errors which the tool should handle and return in DeploymentResponse.
-            error_message = f"DeploymentAgent: Error invoking SalesforceDeployerTool: {str(e)}"
+            error_message = f"DeploymentAgent: Error processing deployment: {str(e)}"
             print(error_message)
+            
             # Create a DeploymentResponse indicating this internal failure
             error_response = DeploymentResponse(
-                request_id=deployment_request.request_id,
+                request_id=deployment_request_dict.get("request_id", "unknown"),
                 success=False,
                 status="Failed",
                 error_message=error_message
             )
-            response_updates["current_deployment_response"] = error_response
+            response_updates["current_deployment_response"] = error_response.model_dump()
             response_updates["current_deployment_request"] = None # Clear the request
 
     else:
-        if deployment_request: # It exists but is not the expected type
-             print("DeploymentAgent: deployment_request is not a valid DeploymentRequest instance.")
-             response_updates["current_deployment_response"] = DeploymentResponse(
-                request_id="unknown",
-                success=False,
-                status="Failed",
-                error_message="Invalid request type received by DeploymentAgent."
-             )
-             response_updates["current_deployment_request"] = None # Clear the invalid request
-        else:
-            print("DeploymentAgent: No current_deployment_request to process.")
+        print("DeploymentAgent: No current_deployment_request to process.")
 
     # Merge updates with the current state
     updated_state = state.copy()

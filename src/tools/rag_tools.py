@@ -23,7 +23,8 @@ from supabase import create_client, Client
 from github import Github
 import requests
 
-from ..schemas.flow_schemas import FlowMetadata, FlowElement
+# Remove the problematic import for now since we don't actually use these classes
+# from ..schemas.flow_builder_schemas import FlowMetadata, FlowElement
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,11 @@ class RAGManager:
             supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
             
             if supabase_url and supabase_key:
-                self.supabase_client = create_client(supabase_url, supabase_key)
+                # Create Supabase client with minimal configuration to avoid proxy issues
+                self.supabase_client = create_client(
+                    supabase_url=supabase_url,
+                    supabase_key=supabase_key
+                )
                 logger.info("Supabase client initialized successfully")
             else:
                 logger.warning("Supabase credentials not found in environment variables")
@@ -81,6 +86,8 @@ class RAGManager:
                 
         except Exception as e:
             logger.error(f"Error initializing RAG clients: {str(e)}")
+            # Don't re-raise the exception to prevent startup failures
+            # The tools will handle missing clients gracefully
     
     def setup_supabase_tables(self) -> bool:
         """Setup required Supabase tables for RAG"""

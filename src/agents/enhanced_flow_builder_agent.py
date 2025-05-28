@@ -282,28 +282,33 @@ class EnhancedFlowBuilderAgent:
             
             # Enhance the response with RAG insights
             if isinstance(basic_response, FlowBuildResponse):
-                # Add RAG-derived recommendations
+                # Add RAG-derived recommendations to existing lists
+                enhanced_recommendations = basic_response.recommendations + [
+                    f"Applied best practices for {analysis['primary_use_case']} flows",
+                    f"Considered {len(knowledge['sample_flows'])} similar sample flows",
+                    f"Incorporated {len(knowledge['best_practices'])} relevant best practices",
+                    "Flow designed with performance and scalability in mind"
+                ]
+                
+                enhanced_best_practices = basic_response.best_practices_applied + [
+                    f"RAG-enhanced flow for {analysis['complexity_level']} complexity",
+                    f"Knowledge-based design for {analysis['primary_use_case']} use case"
+                ]
+                
+                # Create enhanced response with valid fields only
                 enhanced_response = FlowBuildResponse(
                     success=True,
                     input_request=request,
                     flow_xml=basic_response.flow_xml,
-                    flow_api_name=basic_response.flow_api_name,
-                    recommendations=[
-                        f"Applied best practices for {analysis['primary_use_case']} flows",
-                        f"Considered {len(knowledge['sample_flows'])} similar sample flows",
-                        f"Incorporated {len(knowledge['best_practices'])} relevant best practices",
-                        "Flow designed with performance and scalability in mind"
-                    ],
-                    rag_context={
-                        "use_case": analysis["primary_use_case"],
-                        "complexity": analysis["complexity_level"],
-                        "knowledge_sources": {
-                            "best_practices_count": len(knowledge["best_practices"]),
-                            "sample_flows_count": len(knowledge["sample_flows"]),
-                            "patterns_count": len(knowledge["patterns"])
-                        },
-                        "llm_insights": llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
-                    }
+                    flow_definition_xml=basic_response.flow_definition_xml,
+                    validation_errors=basic_response.validation_errors,
+                    error_message=basic_response.error_message,
+                    elements_created=basic_response.elements_created,
+                    variables_created=basic_response.variables_created,
+                    best_practices_applied=enhanced_best_practices,
+                    recommendations=enhanced_recommendations,
+                    deployment_notes=basic_response.deployment_notes,
+                    dependencies=basic_response.dependencies
                 )
                 
                 logger.info(f"Successfully generated enhanced flow: {request.flow_api_name}")
@@ -328,17 +333,20 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
     """
     print("----- ENHANCED FLOW BUILDER AGENT (with RAG) -----")
     
-    flow_build_request: Optional[FlowBuildRequest] = state.get("current_flow_build_request")
+    flow_build_request_dict = state.get("current_flow_build_request")
     response_updates = {}
     
-    if flow_build_request and isinstance(flow_build_request, FlowBuildRequest):
-        print(f"Processing enhanced FlowBuildRequest for Flow: {flow_build_request.flow_api_name}")
-        print(f"Flow Description: {flow_build_request.flow_description}")
-        
-        # Initialize the enhanced agent
-        agent = EnhancedFlowBuilderAgent(llm)
-        
+    if flow_build_request_dict:
         try:
+            # Convert dict back to Pydantic model
+            flow_build_request = FlowBuildRequest(**flow_build_request_dict)
+            
+            print(f"Processing enhanced FlowBuildRequest for Flow: {flow_build_request.flow_api_name}")
+            print(f"Flow Description: {flow_build_request.flow_description}")
+            
+            # Initialize the enhanced agent
+            agent = EnhancedFlowBuilderAgent(llm)
+            
             # Generate flow with RAG enhancement
             flow_response = agent.generate_flow_with_rag(flow_build_request)
             
@@ -352,24 +360,15 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
             else:
                 print(f"❌ Flow generation failed: {flow_response.error_message}")
             
-            response_updates["current_flow_build_response"] = flow_response
+            # Convert response to dict for state storage
+            response_updates["current_flow_build_response"] = flow_response.model_dump()
             response_updates["current_flow_build_request"] = None  # Clear the request
             
         except Exception as e:
-            error_message = f"Enhanced FlowBuilderAgent: Unexpected error: {str(e)}"
+            error_message = f"Enhanced FlowBuilderAgent: Error processing request: {str(e)}"
             print(error_message)
             
-            flow_build_response = FlowBuildResponse(
-                success=False,
-                input_request=flow_build_request,
-                error_message=error_message
-            )
-            response_updates["current_flow_build_response"] = flow_build_response
-            response_updates["current_flow_build_request"] = None
-    
-    else:
-        if flow_build_request:
-            print("Enhanced FlowBuilderAgent: Invalid flow_build_request type.")
+            # Create a dummy request for error response
             dummy_request = FlowBuildRequest(
                 flow_api_name="unknown",
                 flow_label="unknown",
@@ -378,14 +377,17 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
                 display_text_api_name="unknown",
                 display_text_content="unknown"
             )
-            response_updates["current_flow_build_response"] = FlowBuildResponse(
+            
+            flow_build_response = FlowBuildResponse(
                 success=False,
                 input_request=dummy_request,
-                error_message="Invalid request type received by Enhanced FlowBuilderAgent."
+                error_message=error_message
             )
+            response_updates["current_flow_build_response"] = flow_build_response.model_dump()
             response_updates["current_flow_build_request"] = None
-        else:
-            print("Enhanced FlowBuilderAgent: No current_flow_build_request to process.")
+    
+    else:
+        print("Enhanced FlowBuilderAgent: No current_flow_build_request to process.")
     
     # Update state
     updated_state = state.copy()

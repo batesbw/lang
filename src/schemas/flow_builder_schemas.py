@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any, Literal, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 class FlowType(str, Enum):
@@ -34,6 +34,20 @@ class FlowTriggerType(str, Enum):
 
 class UserStory(BaseModel):
     """Represents a user story for flow development"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "User story for flow development",
+            "examples": [
+                {
+                    "title": "Automate Lead Assignment",
+                    "description": "As a sales manager, I want leads to be automatically assigned to the right sales rep so that response time is improved",
+                    "acceptance_criteria": ["Leads are assigned within 5 minutes", "Assignment follows territory rules"],
+                    "priority": "High"
+                }
+            ]
+        }
+    )
+    
     title: str = Field(..., description="Title of the user story")
     description: str = Field(..., description="As a [user], I want [goal] so that [benefit]")
     acceptance_criteria: List[str] = Field(..., description="List of acceptance criteria that define when the story is complete")
@@ -44,6 +58,12 @@ class UserStory(BaseModel):
 
 class FlowRequirement(BaseModel):
     """Detailed flow requirements derived from user stories"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Detailed flow requirements derived from user stories"
+        }
+    )
+    
     flow_type: FlowType = Field(..., description="Type of flow to create")
     trigger_object: Optional[str] = Field(None, description="Object that triggers the flow (for record-triggered flows)")
     trigger_type: Optional[FlowTriggerType] = Field(None, description="When the flow should trigger")
@@ -56,6 +76,12 @@ class FlowRequirement(BaseModel):
 
 class FlowElement(BaseModel):
     """Represents a flow element with its configuration"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Flow element with its configuration"
+        }
+    )
+    
     element_type: FlowElementType = Field(..., description="Type of flow element")
     name: str = Field(..., description="API name of the element")
     label: str = Field(..., description="Display label for the element")
@@ -68,6 +94,12 @@ class FlowElement(BaseModel):
 
 class FlowVariable(BaseModel):
     """Represents a flow variable"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Flow variable definition"
+        }
+    )
+    
     name: str = Field(..., description="API name of the variable")
     data_type: str = Field(..., description="Data type (Text, Number, Boolean, Date, etc.)")
     is_collection: bool = Field(default=False, description="Whether this is a collection variable")
@@ -78,9 +110,23 @@ class FlowVariable(BaseModel):
 
 class FlowBuildRequest(BaseModel):
     """Enhanced request for building a Salesforce Flow"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Request for building a Salesforce Flow",
+            "examples": [
+                {
+                    "flow_api_name": "ProcessLeadConversion",
+                    "flow_label": "Process Lead Conversion",
+                    "flow_description": "Automates lead conversion process",
+                    "flow_type": "Screen Flow"
+                }
+            ]
+        }
+    )
+    
     # Basic flow information
-    flow_api_name: str = Field(..., description="API name for the Flow", example="ProcessLeadConversion")
-    flow_label: str = Field(..., description="Label for the Flow", example="Process Lead Conversion")
+    flow_api_name: str = Field(..., description="API name for the Flow", examples=["ProcessLeadConversion"])
+    flow_label: str = Field(..., description="Label for the Flow", examples=["Process Lead Conversion"])
     flow_description: Optional[str] = Field(None, description="Description of the Flow's purpose")
     target_api_version: str = Field(default="59.0", description="Salesforce API version")
     
@@ -110,6 +156,12 @@ class FlowBuildRequest(BaseModel):
 
 class FlowValidationError(BaseModel):
     """Represents a flow validation error"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Flow validation error details"
+        }
+    )
+    
     error_type: str = Field(..., description="Type of validation error")
     element_name: Optional[str] = Field(None, description="Flow element that caused the error")
     error_message: str = Field(..., description="Detailed error message")
@@ -118,6 +170,12 @@ class FlowValidationError(BaseModel):
 
 class FlowBuildResponse(BaseModel):
     """Enhanced response after a Flow build attempt"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Response after a Flow build attempt"
+        }
+    )
+    
     success: bool = Field(..., description="Whether the flow was built successfully")
     input_request: FlowBuildRequest = Field(..., description="Echo back the request for context")
     flow_xml: Optional[str] = Field(None, description="Generated Flow XML if successful")
@@ -139,6 +197,12 @@ class FlowBuildResponse(BaseModel):
 
 class FlowRepairRequest(BaseModel):
     """Request to repair a flow based on deployment or test errors"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Request to repair a flow based on errors"
+        }
+    )
+    
     flow_xml: str = Field(..., description="Current flow XML that needs repair")
     error_messages: List[str] = Field(..., description="Error messages from deployment or testing")
     error_context: Optional[str] = Field(None, description="Additional context about where errors occurred")
@@ -146,6 +210,12 @@ class FlowRepairRequest(BaseModel):
 
 class FlowRepairResponse(BaseModel):
     """Response after attempting to repair a flow"""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "description": "Response after attempting to repair a flow"
+        }
+    )
+    
     success: bool = Field(..., description="Whether the repair was successful")
     repaired_flow_xml: Optional[str] = Field(None, description="Repaired flow XML")
     repairs_made: List[str] = Field(default_factory=list, description="List of repairs that were made")

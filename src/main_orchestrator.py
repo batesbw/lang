@@ -11,11 +11,12 @@ from langsmith import Client
 # Project imports
 from src.state.agent_workforce_state import AgentWorkforceState
 from src.agents.authentication_agent import run_authentication_agent
-from src.agents.enhanced_flow_builder_agent import run_flow_builder_agent
+from src.agents.enhanced_flow_builder_agent import run_enhanced_flow_builder_agent
 from src.agents.deployment_agent import run_deployment_agent
 from src.schemas.auth_schemas import AuthenticationRequest
-from src.schemas.flow_builder_schemas import FlowBuildRequest
+from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from src.schemas.deployment_schemas import DeploymentRequest
+from src.schemas.auth_schemas import SalesforceAuthResponse
 
 # Load environment variables
 dotenv_path = Path(__file__).resolve().parent.parent / ".env"
@@ -61,7 +62,7 @@ def flow_builder_node(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     print("\n=== FLOW BUILDER NODE ===")
     try:
-        return run_flow_builder_agent(state, LLM)
+        return run_enhanced_flow_builder_agent(state, LLM)
     except Exception as e:
         print(f"Error in flow_builder_node: {e}")
         updated_state = state.copy()
@@ -144,7 +145,8 @@ def prepare_flow_build_request(state: AgentWorkforceState) -> AgentWorkforceStat
     )
     
     updated_state = state.copy()
-    updated_state["current_flow_build_request"] = flow_request
+    # Convert Pydantic model to dict for state storage
+    updated_state["current_flow_build_request"] = flow_request.model_dump()
     print(f"Prepared flow build request for: {flow_request.flow_api_name}")
     
     return updated_state
@@ -156,30 +158,46 @@ def prepare_deployment_request(state: AgentWorkforceState) -> AgentWorkforceStat
     """
     print("\n=== PREPARING DEPLOYMENT REQUEST ===")
     
-    flow_response = state.get("current_flow_build_response")
-    salesforce_session = state.get("salesforce_session")
+    flow_response_dict = state.get("current_flow_build_response")
+    salesforce_session_dict = state.get("salesforce_session")
     
-    if not flow_response or not flow_response.success:
-        print("Cannot prepare deployment request - flow building failed.")
+    if not flow_response_dict:
+        print("Cannot prepare deployment request - no flow build response.")
         return state
     
-    if not salesforce_session:
+    if not salesforce_session_dict:
         print("Cannot prepare deployment request - no Salesforce session available.")
         return state
     
-    # Create deployment request
-    deployment_request = DeploymentRequest(
-        request_id=str(uuid.uuid4()),
-        flow_xml=flow_response.flow_xml,
-        flow_name=flow_response.input_request.flow_api_name,
-        salesforce_session=salesforce_session
-    )
-    
-    updated_state = state.copy()
-    updated_state["current_deployment_request"] = deployment_request
-    print(f"Prepared deployment request for flow: {deployment_request.flow_name}")
-    
-    return updated_state
+    # Convert dict back to Pydantic model for processing
+    try:
+        flow_response = FlowBuildResponse(**flow_response_dict)
+        salesforce_session = SalesforceAuthResponse(**salesforce_session_dict)
+        
+        if not flow_response.success:
+            print("Cannot prepare deployment request - flow building failed.")
+            return state
+        
+        # Create deployment request
+        deployment_request = DeploymentRequest(
+            request_id=str(uuid.uuid4()),
+            flow_xml=flow_response.flow_xml,
+            flow_name=flow_response.input_request.flow_api_name,
+            salesforce_session=salesforce_session
+        )
+        
+        updated_state = state.copy()
+        # Convert Pydantic model to dict for state storage
+        updated_state["current_deployment_request"] = deployment_request.model_dump()
+        print(f"Prepared deployment request for flow: {deployment_request.flow_name}")
+        
+        return updated_state
+        
+    except Exception as e:
+        print(f"Error preparing deployment request: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Error preparing deployment request: {str(e)}"
+        return updated_state
 
 
 def create_workflow() -> StateGraph:
@@ -248,9 +266,12 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
     print(f"\n🚀 Starting Salesforce Agent Workforce for org: {org_alias}")
     print("=" * 60)
     
+    # Create authentication request
+    auth_request = AuthenticationRequest(org_alias=org_alias)
+    
     # Initialize the workflow state
     initial_state: AgentWorkforceState = {
-        "current_auth_request": AuthenticationRequest(org_alias=org_alias),
+        "current_auth_request": auth_request.model_dump(),  # Convert to dict
         "current_auth_response": None,
         "is_authenticated": False,
         "salesforce_session": None,
@@ -309,43 +330,61 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     print("-" * 40)
     
     # Authentication status
-    auth_response = final_state.get("current_auth_response")
+    auth_response_dict = final_state.get("current_auth_response")
     if final_state.get("is_authenticated", False):
         print("✅ Authentication: SUCCESS")
-        if auth_response:
-            print(f"   Org ID: {auth_response.org_id}")
-            print(f"   Instance URL: {auth_response.instance_url}")
+        if auth_response_dict:
+            try:
+                auth_response = SalesforceAuthResponse(**auth_response_dict)
+                print(f"   Org ID: {auth_response.org_id}")
+                print(f"   Instance URL: {auth_response.instance_url}")
+            except Exception:
+                print("   (Could not parse auth response details)")
     else:
         print("❌ Authentication: FAILED")
-        if auth_response and auth_response.error_message:
-            print(f"   Error: {auth_response.error_message}")
+        if auth_response_dict:
+            try:
+                auth_response = SalesforceAuthResponse(**auth_response_dict)
+                if auth_response.error_message:
+                    print(f"   Error: {auth_response.error_message}")
+            except Exception:
+                print("   (Could not parse auth response details)")
     
     # Flow building status
-    flow_response = final_state.get("current_flow_build_response")
-    if flow_response:
-        if flow_response.success:
-            print("✅ Flow Building: SUCCESS")
-            print(f"   Flow Name: {flow_response.input_request.flow_api_name}")
-            print(f"   Flow Label: {flow_response.input_request.flow_label}")
-        else:
-            print("❌ Flow Building: FAILED")
-            if flow_response.error_message:
-                print(f"   Error: {flow_response.error_message}")
+    flow_response_dict = final_state.get("current_flow_build_response")
+    if flow_response_dict:
+        try:
+            flow_response = FlowBuildResponse(**flow_response_dict)
+            if flow_response.success:
+                print("✅ Flow Building: SUCCESS")
+                print(f"   Flow Name: {flow_response.input_request.flow_api_name}")
+                print(f"   Flow Label: {flow_response.input_request.flow_label}")
+            else:
+                print("❌ Flow Building: FAILED")
+                if flow_response.error_message:
+                    print(f"   Error: {flow_response.error_message}")
+        except Exception:
+            print("❌ Flow Building: FAILED (Could not parse response)")
     else:
         print("⏭️  Flow Building: SKIPPED")
     
     # Deployment status
-    deployment_response = final_state.get("current_deployment_response")
-    if deployment_response:
-        if deployment_response.success:
-            print("✅ Deployment: SUCCESS")
-            print(f"   Deployment ID: {deployment_response.deployment_id}")
-            print(f"   Status: {deployment_response.status}")
-        else:
-            print("❌ Deployment: FAILED")
-            print(f"   Status: {deployment_response.status}")
-            if deployment_response.error_message:
-                print(f"   Error: {deployment_response.error_message}")
+    deployment_response_dict = final_state.get("current_deployment_response")
+    if deployment_response_dict:
+        try:
+            from src.schemas.deployment_schemas import DeploymentResponse
+            deployment_response = DeploymentResponse(**deployment_response_dict)
+            if deployment_response.success:
+                print("✅ Deployment: SUCCESS")
+                print(f"   Deployment ID: {deployment_response.deployment_id}")
+                print(f"   Status: {deployment_response.status}")
+            else:
+                print("❌ Deployment: FAILED")
+                print(f"   Status: {deployment_response.status}")
+                if deployment_response.error_message:
+                    print(f"   Error: {deployment_response.error_message}")
+        except Exception:
+            print("❌ Deployment: FAILED (Could not parse response)")
     else:
         print("⏭️  Deployment: SKIPPED")
     

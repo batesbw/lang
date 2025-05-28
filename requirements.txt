@@ -1,16 +1,18 @@
-langchain
-langchain-anthropic
-langchain-community
-langgraph
-langsmith
+langchain>=0.1.0,<0.3.0
+langchain-anthropic>=0.1.0,<0.2.0
+langchain-community>=0.0.20,<0.3.0
+langgraph>=0.1.0,<0.3.0
+langsmith>=0.1.0,<0.2.0
 simple-salesforce==1.12.4
 xmltodict==0.13.0
-pydantic==2.5.0
+pydantic>=2.5.0,<3.0.0
 python-dotenv==1.0.0
 requests==2.31.0
+# Fix for Supabase client proxy argument compatibility
+httpx>=0.26.0,<0.28.0
 # RAG Dependencies
-supabase==2.3.4
-langchain-openai==0.1.7
+supabase>=2.9.0,<3.0.0
+langchain-openai>=0.1.0,<0.2.0
 vecs==0.4.0
-pgvector==0.2.4
+pgvector>=0.1.0,<0.2.0
 PyGithub==2.1.1 

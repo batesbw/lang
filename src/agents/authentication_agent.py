@@ -63,22 +63,25 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
     It expects 'current_auth_request' to be set in the input state.
     """
     print("--- Running Authentication Agent ---")
-    auth_request: Optional[AuthenticationRequest] = state.get("current_auth_request")
+    auth_request_dict = state.get("current_auth_request")
 
-    if not auth_request:
+    if not auth_request_dict:
         print("Authentication Agent: No auth_request provided in current_auth_request.")
         updated_state = state.copy()
-        updated_state["current_auth_response"] = AuthenticationResponse(
+        auth_response = AuthenticationResponse(
             success=False,
             error_message="Authentication Agent Error: No auth_request provided for authentication."
         )
+        updated_state["current_auth_response"] = auth_response.model_dump()
         updated_state["is_authenticated"] = False
         updated_state["salesforce_session"] = None
         return updated_state
 
-    org_alias_to_authenticate = auth_request.org_alias
-
     try:
+        # Convert dict back to Pydantic model
+        auth_request = AuthenticationRequest(**auth_request_dict)
+        org_alias_to_authenticate = auth_request.org_alias
+
         auth_tool = SalesforceAuthenticatorTool()
         # The tool's input schema is org_alias.
         auth_response: AuthenticationResponse = auth_tool.invoke({"org_alias": org_alias_to_authenticate})
@@ -98,13 +101,14 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
                 auth_type_used="env_alias"
             )
             
-            updated_state["current_auth_response"] = auth_response
+            # Convert to dicts for state storage
+            updated_state["current_auth_response"] = auth_response.model_dump()
             updated_state["is_authenticated"] = True
-            updated_state["salesforce_session"] = salesforce_session
+            updated_state["salesforce_session"] = salesforce_session.model_dump()
         else:
             error_msg = auth_response.error_message or "Unknown authentication error."
             print(f"Authentication Agent: Failed to authenticate to {org_alias_to_authenticate}. Error: {error_msg}")
-            updated_state["current_auth_response"] = auth_response
+            updated_state["current_auth_response"] = auth_response.model_dump()
             updated_state["is_authenticated"] = False
             updated_state["salesforce_session"] = None
         
@@ -114,12 +118,13 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
         return updated_state
 
     except Exception as e:
-        print(f"Authentication Agent: Error invoking tool directly: {str(e)}")
+        print(f"Authentication Agent: Error processing authentication: {str(e)}")
         updated_state = state.copy()
-        updated_state["current_auth_response"] = AuthenticationResponse(
+        auth_response = AuthenticationResponse(
             success=False,
-            error_message=f"Authentication Agent Tool Invocation Error: {str(e)}"
+            error_message=f"Authentication Agent Processing Error: {str(e)}"
         )
+        updated_state["current_auth_response"] = auth_response.model_dump()
         updated_state["is_authenticated"] = False
         updated_state["salesforce_session"] = None
         updated_state["current_auth_request"] = None
