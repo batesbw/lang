@@ -9,7 +9,7 @@ from io import BytesIO
 from typing import Type, Optional, List, Dict, Any
 
 from langchain_core.tools import BaseTool
-from pydantic.v1 import BaseModel, Field # Ensure Pydantic v1 for BaseTool compatibility if needed
+from pydantic import BaseModel, Field  # Use Pydantic v2 for consistency
 from simple_salesforce import Salesforce
 from simple_salesforce.exceptions import SalesforceError
 

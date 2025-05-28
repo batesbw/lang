@@ -1,7 +1,12 @@
 import os
 import uuid
+import warnings
 from pathlib import Path
 from typing import Dict, Any
+
+# Suppress Pydantic v1/v2 mixing warnings from LangChain internals
+warnings.filterwarnings("ignore", message=".*Mixing V1 models and V2 models.*")
+warnings.filterwarnings("ignore", message=".*Cannot generate a JsonSchema for core_schema.PlainValidatorFunctionSchema.*")
 
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic

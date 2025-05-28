@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "salesforce_agent_workforce": "src/main_orchestrator.py:create_workflow"
+    "salesforce_agent_workforce": "./src/main_orchestrator.py:create_workflow"
   },
   "env": ".env"
 } 
