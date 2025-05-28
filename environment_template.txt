@@ -1,0 +1,24 @@
+# Environment Variables Template for Salesforce Agent Workforce
+# Copy this to a .env file and fill in your actual values.
+
+# LangSmith Configuration (Required for Tracing & Observability)
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT="https://api.smith.langchain.com"
+LANGCHAIN_API_KEY="your_langsmith_api_key"
+LANGCHAIN_PROJECT="Salesforce_Agent_Workforce" # Or your preferred project name
+
+# Anthropic API Key (Required for LLM)
+ANTHROPIC_API_KEY="your_anthropic_api_key"
+
+# Salesforce Connected App Details (Example for JWT Bearer Flow - adjust if using other flows)
+# These would be used by the AuthenticationAgent
+SALESFORCE_CLIENT_ID="your_salesforce_connected_app_client_id"
+SALESFORCE_SERVER_KEY_PATH="path/to/your/server.key" # Path to the private key file
+SALESFORCE_USERNAME="your_salesforce_username_for_jwt_flow"
+SALESFORCE_INSTANCE_URL="https://your_domain.my.salesforce.com" # e.g., https://login.salesforce.com or your My Domain
+
+# Alternatively, for Username-Password Flow (less secure, for dev/testing only):
+# SALESFORCE_USERNAME="your_salesforce_username"
+# SALESFORCE_PASSWORD="your_salesforce_password"
+# SALESFORCE_SECURITY_TOKEN="your_salesforce_security_token"
+# SALESFORCE_INSTANCE_URL="https://your_domain.my.salesforce.com" 

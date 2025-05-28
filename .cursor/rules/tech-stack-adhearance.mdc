@@ -1,0 +1,39 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: Technology Stack Adherence
+
+## 1. Core Technology Stack
+
+This project will primarily utilize the following technology stack. All development and implementation should prioritize these tools and frameworks:
+
+- **Orchestration & Agent Framework**: LangChain, LangGraph
+- **Observability**: LangSmith
+- **Primary Language**: Python
+- **LLMs**: Anthropic Claude (or other models as explicitly decided)
+
+## 2. Salesforce Specific Tools
+
+For interaction with Salesforce and metadata manipulation, the following (or similar, as defined in `TASK.md`) will be used:
+
+- `simple-salesforce` (for Salesforce API interactions)
+- `xmltodict` (for XML parsing and generation, especially for Flow metadata)
+- Standard Python XML libraries (e.g., `xml.etree.ElementTree`)
+
+## 3. Supporting Libraries
+
+- `pydantic` (for data modeling and validation between agents/tools)
+- `python-dotenv` (for environment variable management)
+- `requests` (for direct HTTP calls if necessary)
+
+## 4. Browser Automation (for `FlowTestAgent`)
+
+- Libraries like Playwright or Selenium, integrated as LangChain tools.
+
+## 5. Guiding Principle
+
+- **Adherence**: Solutions, code generation, and architectural decisions must align with this defined stack.
+- **Deviation**: Any deviation or introduction of new major technologies/tools outside this stack requires explicit discussion and approval from the USER.
+- **Rationale**: This ensures consistency, maintainability, and leverages the strengths of the chosen frameworks for building this multi-agent system. 

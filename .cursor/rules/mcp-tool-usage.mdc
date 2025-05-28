@@ -1,0 +1,33 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: MCP Tool Usage for Contextual Understanding
+
+## 1. Purpose of MCP Tools
+
+`mcp` (Meta-programming and Contextual Processing) tools, such as `mcp_context7_resolve-library-id` and `mcp_context7_get-library-docs`, are available to enhance contextual understanding, particularly for accessing up-to-date documentation and usage patterns of libraries and APIs.
+
+## 2. Prioritization
+
+- **Official Documentation First**: When implementing features related to specific libraries (e.g., `simple-salesforce`, `LangChain`, `LangGraph`), prioritize information from their official documentation.
+- **`mcp_context7` for Augmentation**: Use `mcp_context7_get-library-docs` to augment understanding, find specific examples, or clarify ambiguities not readily available in already known sources or when official documentation is vast or hard to navigate for a specific, niche query.
+
+## 3. Usage Guidelines for `mcp_context7`
+
+- **`resolve-library-id`**: ALWAYS call `mcp_context7_resolve-library-id` first to get the correct Context7-compatible library ID before calling `mcp_context7_get-library-docs`, unless a valid ID is already known or provided.
+- **Specificity in Queries (`topic`)**: When using `mcp_context7_get-library-docs`, provide a specific `topic` to narrow down the search for the most relevant documentation snippets (e.g., 'authentication with simple-salesforce', 'LangGraph state management', 'Playwright locators for web elements').
+- **Token Management (`tokens`)**: Be mindful of the `tokens` parameter. Start with a reasonable default and adjust if more or less context is needed. Avoid excessively large token requests.
+- **Relevance Assessment**: Critically assess the relevance of the information retrieved. The tool provides documentation snippets; it's the AI's responsibility to synthesize this information correctly within the project's context.
+- **Explanation**: When using these tools, briefly explain *why* the information is being sought and *how* it will help achieve the current task, as per standard tool use guidelines.
+
+## 4. When NOT to Use (or Use Sparingly)
+
+- **Core Logic/Algorithm Design**: These tools are for documentation retrieval, not for designing core algorithms or business logic for the agents. Agent logic should primarily stem from the project requirements and the `PLANNING.MD` / `TASK.MD`.
+- **Replacing Established Knowledge**: If a well-established pattern or solution for a problem is already known and documented within the project or widely accepted for the given library, `mcp_context7` might not be necessary.
+
+## 5. Guiding Principle
+
+- **Efficiency and Relevance**: The goal is to efficiently obtain relevant, up-to-date information to aid in development, not to replace critical thinking or architectural planning.
+- **Supplement, Don't Supplant**: Use `mcp` tools to supplement existing knowledge and official documentation, not as the sole source of truth for implementation details. 

@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Rule: Project Plan Alignment
+
+## 1. Primary Guiding Documents
+
+The primary sources of truth for project direction, scope, and task prioritization are:
+
+- **`PLANNING.MD`**: Outlines the overall strategic vision, multi-agent architecture, roles of each agent, core philosophies, and long-term goals.
+- **`TASK.MD`**: Provides a detailed, phased breakdown of implementation tasks, including specific agent capabilities, tool development, and orchestration logic for each phase.
+
+## 2. Adherence to Phased Implementation
+
+- **Follow Phasing**: Development should generally follow the phases outlined in `TASK.MD`. Features and capabilities planned for later phases should not be prematurely implemented unless explicitly discussed and agreed upon with the USER.
+- **MVP Focus**: Initial efforts should concentrate on completing Phase 1 tasks to establish a foundational, working multi-agent system, as per `TASK.MD`.
+
+## 3. Scope Management
+
+- **Defined Scope**: The scope of each agent and the overall workforce is defined by the capabilities listed in `PLANNING.MD` and the tasks in `TASK.MD`.
+- **Scope Creep**: Avoid introducing new features, agent responsibilities, or significant architectural changes that are not aligned with these documents without prior discussion and approval from the USER. If a new requirement emerges, the planning documents should be updated first.
+
+## 4. Task Prioritization
+
+- **`TASK.MD` as Guide**: Use the priorities (e.g., Critical, High, Medium, Low) and sequential ordering within `TASK.MD` as the primary guide for what to work on next.
+- **Dependencies**: Be mindful of task dependencies outlined or implied in `TASK.MD`.
+
+## 5. Architectural Consistency
+
+- **`PLANNING.MD` Architecture**: All agent design, tool creation, and LangGraph orchestration must align with the multi-agent architecture described in `PLANNING.MD`.
+- **Agent Responsibilities**: Ensure each agent's implementation sticks to its defined purpose and responsibilities (e.g., `AuthenticationAgent` handles only auth, `FlowBuilderAgent` focuses on Flow XML generation and repair based on requirements and feedback).
+
+## 6. Seeking Clarification
+
+- **Ambiguity Resolution**: If any aspect of `PLANNING.MD` or `TASK.MD` is unclear, or if a development challenge requires a potential deviation, seek clarification from the USER before proceeding with a significant change.
+
+## 7. Updating Planning Documents
+
+- **Living Documents**: `PLANNING.MD` and `TASK.MD` can be updated, but changes should be a collaborative process with the USER.
+- **Rationale for Changes**: If a change to the plan is proposed, provide a clear rationale, considering its impact on the overall project, timeline, and other tasks.
+
+## 8. Guiding Principle
+
+- **Planned and Deliberate Development**: The aim is to ensure that development is structured, follows the agreed-upon strategic plan, and meets the project objectives in an organized manner.
+- **Shared Understanding**: These documents serve as a shared understanding between the USER and the AI. Adherence ensures alignment and reduces misunderstandings. 
