@@ -1,0 +1,32 @@
+[project]
+name = "salesforce_agent_workforce"
+version = "0.1.0"
+description = "A multi-agent system for Salesforce Flow development and deployment."
+dependencies = [
+    # Dependencies can be populated from requirements.txt
+    # For example:
+    # "langchain>=0.1,<0.2",
+    # "langgraph>=0.0.30,<0.1",
+    # "langchain-anthropic>=0.1,<0.2",
+    # "langsmith>=0.1,<0.2",
+    # "simple-salesforce>=1.12,<2.0",
+    # "xmltodict>=0.13,<0.14",
+    # "python-dotenv>=1.0,<2.0",
+    # "pydantic>=2.5,<3.0", # Note: LangChain tools often expect Pydantic v1 if BaseModel from pydantic.v1 is used
+    # "requests>=2.0,<3.0"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# Optional but good practice for projects with a src layout:
+# This tells setuptools that your packages are under the 'src' directory.
+[tool.setuptools.packages.find]
+where = ["."]  # Look in the current directory (project root)
+include = ["src", "src.*"] # Tell it to find the 'src' package and its sub-packages
+
+[tool.setuptools]
+# This indicates that top-level Python modules and packages 
+# (like the 'src' package itself) are found in the project root.
+package-dir = {"" = "."} 

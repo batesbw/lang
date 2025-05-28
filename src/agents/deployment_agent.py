@@ -26,9 +26,8 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
         tool = SalesforceDeployerTool()
         
         try:
-            # The SalesforceDeployerTool is designed to take DeploymentRequest directly
-            # and return a DeploymentResponse.
-            deployment_response: DeploymentResponse = tool.invoke(deployment_request)
+            # Call the tool's _run method directly with the DeploymentRequest
+            deployment_response: DeploymentResponse = tool._run(deployment_request)
             
             if deployment_response.success:
                 print(f"Deployment successful for request ID: {deployment_request.request_id}, SF Deployment ID: {deployment_response.deployment_id}")

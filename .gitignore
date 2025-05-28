@@ -238,3 +238,5 @@ models/
 # Logs
 logs/
 *.log 
+# JWT Bearer Flow certificates (keep private!)
+certs/

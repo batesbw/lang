@@ -3,12 +3,15 @@ import io
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+import os
+import tempfile
+from io import BytesIO
 from typing import Type, Optional, List, Dict, Any
 
 from langchain_core.tools import BaseTool
 from pydantic.v1 import BaseModel, Field # Ensure Pydantic v1 for BaseTool compatibility if needed
 from simple_salesforce import Salesforce
-from simple_salesforce.exceptions import SalesforceDeployError
+from simple_salesforce.exceptions import SalesforceError
 
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 from src.schemas.auth_schemas import SalesforceAuthResponse
@@ -57,104 +60,115 @@ class SalesforceDeployerTool(BaseTool):
         """
         try:
             sf_session: SalesforceAuthResponse = request.salesforce_session
-            sf = Salesforce(session_id=sf_session.session_id, instance_url=sf_session.instance_url)
+            
+            # Ensure instance URL has proper protocol
+            instance_url = sf_session.instance_url
+            if instance_url and not instance_url.startswith('https://'):
+                instance_url = f"https://{instance_url}"
+            
+            sf = Salesforce(session_id=sf_session.session_id, instance_url=instance_url)
 
             package_xml_content = self._create_package_xml(request.flow_name)
             zip_bytes = self._create_zip_package(request.flow_name, request.flow_xml, package_xml_content)
             
-            # Base64 encode the zip file
-            zip_base64 = base64.b64encode(zip_bytes).decode('utf-8')
+            # Create a temporary file to store the zip file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip_file:
+                temp_zip_file.write(zip_bytes)
+                temp_zip_file_path = temp_zip_file.name
 
-            # Define deploy options (can be customized further if needed)
-            # https://developer.salesforce.com/docs/atlas.en-us.api_meta.meta/api_meta/meta_deploy.htm#deployoptions
-            deploy_options = {
-                'allowMissingFiles': False,
-                'autoUpdatePackage': False,
-                'checkOnly': False,       # Set to True for validation without actual deployment
-                'ignoreWarnings': False,
-                'performRetrieve': False,
-                'purgeOnDelete': False,
-                'rollbackOnError': True,  # Highly recommended
-                'runTests': [],           # Specify test classes if needed, or use testLevel
-                'singlePackage': True,    # Crucial for deploying a single package zip
-                # 'testLevel': 'NoTestRun' # Options: NoTestRun, RunSpecifiedTests, RunLocalTests, RunAllTestsInOrg
-            }
-            
-            # For simple Flow deployment without Apex, NoTestRun is often sufficient.
-            # If Flow triggers Apex or has test requirements, adjust accordingly.
-            # If deploying to Production, tests are usually required.
-            # Default simple-salesforce behavior might handle this or might need testLevel specified.
-            # Let's be explicit with 'testLevel' if not running tests.
-            if not deploy_options.get('runTests'): # If no specific tests, set a testLevel
-                deploy_options['testLevel'] = 'NoTestRun'
-
-
-            print(f"Deploying Flow '{request.flow_name}' to {sf_session.instance_url}...")
-            
-            # simple-salesforce deploy method expects a dict of options
-            deploy_result_async_id = sf.deploy(zip_base64, deploy_options)
-            
-            deployment_id = deploy_result_async_id.get('id')
-            if not deployment_id:
-                return DeploymentResponse(
-                    request_id=request.request_id,
-                    success=False,
-                    status="Failed",
-                    error_message="Failed to initiate deployment: No deployment ID received."
-                )
-
-            print(f"Deployment initiated with ID: {deployment_id}. Polling for status...")
-
-            # Polling for deployment status
-            max_retries = 60  # Poll for up to 5 minutes (60 retries * 5 seconds)
-            retries = 0
-            final_status_info = None
-
-            while retries < max_retries:
-                status_info = sf.check_deploy_status(deployment_id)
-                print(f"  Status: {status_info.get('status')}, Done: {status_info.get('done')}")
-
-                if status_info.get('done'):
-                    final_status_info = status_info
-                    break
+            try:
+                print(f"Deploying Flow '{request.flow_name}' to {sf_session.instance_url}...")
                 
-                time.sleep(5)  # Wait 5 seconds before polling again
-                retries += 1
-            
-            if not final_status_info:
+                # simple-salesforce deploy method expects a file path and sandbox flag
+                deploy_result_async_id = sf.deploy(temp_zip_file_path, sandbox=False)
+                
+                deployment_id = deploy_result_async_id.get('asyncId') or deploy_result_async_id.get('id')
+                if not deployment_id:
+                    return DeploymentResponse(
+                        request_id=request.request_id,
+                        success=False,
+                        status="Failed",
+                        error_message="Failed to initiate deployment: No deployment ID received."
+                    )
+
+                print(f"Deployment initiated with ID: {deployment_id}. Polling for status...")
+
+                # Polling for deployment status
+                max_retries = 60  # Poll for up to 5 minutes (60 retries * 5 seconds)
+                retries = 0
+                final_status_info = None
+
+                while retries < max_retries:
+                    status_info = sf.checkDeployStatus(deployment_id)
+                    print(f"  Raw status_info: {status_info}")
+                    
+                    # The actual response structure uses 'state' not 'status'
+                    state = status_info.get('state', '')
+                    print(f"  State: {state}")
+
+                    # Check if deployment is complete (success or failure)
+                    if state in ['Succeeded', 'Failed', 'Canceled', 'SucceededPartial']:
+                        final_status_info = status_info
+                        break
+                    
+                    time.sleep(5)  # Wait 5 seconds before polling again
+                    retries += 1
+                
+                if not final_status_info:
+                    return DeploymentResponse(
+                        request_id=request.request_id,
+                        success=False,
+                        status="InProgress", # Or "TimedOut"
+                        deployment_id=deployment_id,
+                        error_message=f"Deployment polling timed out after {max_retries * 5} seconds."
+                    )
+
+                # Process final deployment status
+                # The actual structure from simple-salesforce checkDeployStatus:
+                # state (str), state_detail, deployment_detail (dict with errors), unit_test_detail
+                
+                state = final_status_info.get('state', 'Unknown')
+                deployment_detail = final_status_info.get('deployment_detail', {})
+                
+                # Extract component errors from deployment_detail
+                deployment_errors = deployment_detail.get('errors', [])
+                
+                # Convert deployment errors to component errors format
+                component_errors = []
+                for error in deployment_errors:
+                    component_errors.append({
+                        'fullName': request.flow_name,
+                        'componentType': error.get('type', 'Flow'),
+                        'problem': error.get('message', 'Unknown error'),
+                        'fileName': error.get('file', f"flows/{request.flow_name}.flow-meta.xml")
+                    })
+
+                # Determine success based on state
+                success = state == 'Succeeded'
+                
+                # Extract error message
+                error_message = None
+                if not success and component_errors:
+                    error_message = f"Deployment failed with {len(component_errors)} error(s)"
+
                 return DeploymentResponse(
                     request_id=request.request_id,
-                    success=False,
-                    status="InProgress", # Or "TimedOut"
+                    success=success,
+                    status=state,
                     deployment_id=deployment_id,
-                    error_message=f"Deployment polling timed out after {max_retries * 5} seconds."
+                    error_message=error_message,
+                    component_successes=[], # simple-salesforce doesn't provide success details in this format
+                    component_errors=component_errors
                 )
-
-            # Process final deployment status
-            # The structure of status_info (DeployResult) from simple_salesforce:
-            # success (bool), status (str), errorMessage (str), 
-            # details (dict with componentSuccesses, componentFailures, etc.)
             
-            # Map DeployResult details to DeploymentResponse
-            component_successes = final_status_info.get('details', {}).get('componentSuccesses', [])
-            component_errors = final_status_info.get('details', {}).get('componentFailures', [])
-            
-            # Ensure lists are not None if empty
-            component_successes = component_successes if component_successes is not None else []
-            component_errors = component_errors if component_errors is not None else []
+            finally:
+                # Clean up the temporary file
+                try:
+                    os.unlink(temp_zip_file_path)
+                except OSError:
+                    pass  # Ignore errors if file doesn't exist or can't be deleted
 
-
-            return DeploymentResponse(
-                request_id=request.request_id,
-                success=final_status_info.get('success', False),
-                status=final_status_info.get('status', 'Unknown'),
-                deployment_id=deployment_id,
-                error_message=final_status_info.get('errorMessage'),
-                component_successes=[dict(item) for item in component_successes], # Convert from SF specific types if any
-                component_errors=[dict(item) for item in component_errors]
-            )
-
-        except SalesforceDeployError as sde:
+        except SalesforceError as sde:
             # This exception is raised by simple_salesforce on certain deploy errors
             # (e.g., if deploy() itself fails before returning an ID)
             return DeploymentResponse(

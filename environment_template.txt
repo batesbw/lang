@@ -1,24 +1,84 @@
-# Environment Variables Template for Salesforce Agent Workforce
-# Copy this to a .env file and fill in your actual values.
+# Environment Variables Template for Salesforce Multi-Agent Workforce
+# Copy this file to .env and fill in your actual values
 
-# LangSmith Configuration (Required for Tracing & Observability)
-LANGCHAIN_TRACING_V2=true
+# LangSmith Configuration (Optional - for observability)
+LANGCHAIN_TRACING_V2="true"
 LANGCHAIN_ENDPOINT="https://api.smith.langchain.com"
-LANGCHAIN_API_KEY="your_langsmith_api_key"
-LANGCHAIN_PROJECT="Salesforce_Agent_Workforce" # Or your preferred project name
+LANGCHAIN_API_KEY="your_langsmith_api_key_here"
+LANGCHAIN_PROJECT="salesforce-multi-agent-workforce"
 
-# Anthropic API Key (Required for LLM)
-ANTHROPIC_API_KEY="your_anthropic_api_key"
+# Anthropic API Configuration
+ANTHROPIC_API_KEY="your_anthropic_api_key_here"
 
-# Salesforce Connected App Details (Example for JWT Bearer Flow - adjust if using other flows)
-# These would be used by the AuthenticationAgent
-SALESFORCE_CLIENT_ID="your_salesforce_connected_app_client_id"
-SALESFORCE_SERVER_KEY_PATH="path/to/your/server.key" # Path to the private key file
-SALESFORCE_USERNAME="your_salesforce_username_for_jwt_flow"
-SALESFORCE_INSTANCE_URL="https://your_domain.my.salesforce.com" # e.g., https://login.salesforce.com or your My Domain
+# ============================================================================
+# Salesforce Organization Configurations
+# ============================================================================
+# 
+# For each Salesforce org, you need to set up OAuth JWT Bearer Flow authentication.
+# This is the modern, secure method that works with both REST and Metadata APIs.
+#
+# Prerequisites for JWT Bearer Flow:
+# 1. Create a Connected App in Salesforce with:
+#    - Enable OAuth Settings: Yes
+#    - Use digital signatures: Yes (upload your certificate)
+#    - Selected OAuth Scopes: "Access and manage your data (api)", "Perform requests on your behalf at any time (refresh_token, offline_access)"
+#    - Permitted Users: Admin approved users are pre-authorized (or All users may self-authorize)
+# 2. Generate a private key and certificate (see documentation)
+# 3. Pre-authorize the user for the Connected App (if using admin approved users)
 
-# Alternatively, for Username-Password Flow (less secure, for dev/testing only):
-# SALESFORCE_USERNAME="your_salesforce_username"
-# SALESFORCE_PASSWORD="your_salesforce_password"
-# SALESFORCE_SECURITY_TOKEN="your_salesforce_security_token"
-# SALESFORCE_INSTANCE_URL="https://your_domain.my.salesforce.com" 
+# Example Sandbox Org Configuration
+SF_USERNAME_SANDBOX="your_username@company.com.sandbox"
+SF_CONSUMER_KEY_SANDBOX="your_connected_app_consumer_key_here"
+SF_PRIVATE_KEY_FILE_SANDBOX="/path/to/your/private_key.pem"
+SF_INSTANCE_URL_SANDBOX="https://your-domain--sandbox.my.salesforce.com"
+
+# Example Production Org Configuration  
+SF_USERNAME_PRODUCTION="your_username@company.com"
+SF_CONSUMER_KEY_PRODUCTION="your_connected_app_consumer_key_here"
+SF_PRIVATE_KEY_FILE_PRODUCTION="/path/to/your/private_key.pem"
+SF_INSTANCE_URL_PRODUCTION="https://your-domain.my.salesforce.com"
+
+# E2E Test Org Configuration (for automated testing)
+SF_USERNAME_E2E_TEST_ORG="your_test_username@company.com.sandbox"
+SF_CONSUMER_KEY_E2E_TEST_ORG="your_test_connected_app_consumer_key_here"
+SF_PRIVATE_KEY_FILE_E2E_TEST_ORG="/path/to/your/test_private_key.pem"
+SF_INSTANCE_URL_E2E_TEST_ORG="https://your-test-domain--sandbox.my.salesforce.com"
+
+# ============================================================================
+# How to Generate Private Key and Certificate for JWT Bearer Flow:
+# ============================================================================
+#
+# 1. Generate a private key:
+#    openssl genrsa -out private_key.pem 2048
+#
+# 2. Generate a certificate signing request:
+#    openssl req -new -key private_key.pem -out certificate.csr
+#
+# 3. Generate a self-signed certificate (valid for 1 year):
+#    openssl x509 -req -days 365 -in certificate.csr -signkey private_key.pem -out certificate.crt
+#
+# 4. Upload certificate.crt to your Connected App in Salesforce
+# 5. Use private_key.pem as the SF_PRIVATE_KEY_FILE_* value
+#
+# ============================================================================
+# Connected App Setup in Salesforce:
+# ============================================================================
+#
+# 1. Setup > App Manager > New Connected App
+# 2. Basic Information:
+#    - Connected App Name: "Multi-Agent Workforce"
+#    - API Name: "Multi_Agent_Workforce"
+#    - Contact Email: your email
+# 3. API (Enable OAuth Settings):
+#    - Enable OAuth Settings: ✓
+#    - Callback URL: https://login.salesforce.com (not used for JWT flow but required)
+#    - Use digital signatures: ✓ (upload your certificate.crt)
+#    - Selected OAuth Scopes:
+#      * Access and manage your data (api)
+#      * Perform requests on your behalf at any time (refresh_token, offline_access)
+# 4. Save and note the Consumer Key
+# 5. Manage > Edit Policies:
+#    - Permitted Users: Admin approved users are pre-authorized
+#    - IP Relaxation: Relax IP restrictions (or configure as needed)
+# 6. Manage > Manage Profiles/Permission Sets:
+#    - Add the user's profile or create a permission set for the user 

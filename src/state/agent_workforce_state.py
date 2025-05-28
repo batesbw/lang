@@ -1,6 +1,6 @@
 from typing import TypedDict, Optional, List, Any
 from src.schemas.auth_schemas import SalesforceAuthRequest, SalesforceAuthResponse
-from src.schemas.flow_schemas import FlowBuildRequest, FlowBuildResponse
+from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 
 class AgentWorkforceState(TypedDict, total=False):

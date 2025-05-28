@@ -11,8 +11,8 @@ from typing import List, Dict, Optional
 
 # Project-specific imports
 from src.tools.salesforce_tools import SalesforceAuthenticatorTool
-from src.schemas.auth_schemas import AuthenticationResponse, SalesforceSessionDetails, AuthenticationRequest
-from src.state.graph_state import AgentWorkforceState # Assuming this will be the shared state type
+from src.schemas.auth_schemas import AuthenticationResponse, SalesforceSessionDetails, AuthenticationRequest, SalesforceAuthResponse
+from src.state.agent_workforce_state import AgentWorkforceState # Using the correct state module
 
 # Load environment variables from .env file
 # Construct the path to the .env file in the project root
@@ -60,64 +60,69 @@ def create_authentication_agent_executor() -> AgentExecutor:
 def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     Executes the authentication agent and updates the graph state based on the outcome.
-    It expects 'current_org_alias_request' to be set in the input state.
+    It expects 'current_auth_request' to be set in the input state.
     """
     print("--- Running Authentication Agent ---")
-    org_alias_to_authenticate = state.get("current_org_alias_request")
+    auth_request: Optional[AuthenticationRequest] = state.get("current_auth_request")
 
-    if not org_alias_to_authenticate:
-        print("Authentication Agent: No org_alias provided in current_org_alias_request.")
+    if not auth_request:
+        print("Authentication Agent: No auth_request provided in current_auth_request.")
         updated_state = state.copy()
-        updated_state["authentication_error"] = "Authentication Agent Error: No org_alias provided for authentication."
-        updated_state["last_authenticated_org_alias"] = None 
-        updated_state["active_salesforce_sessions"] = state.get("active_salesforce_sessions") or {}
+        updated_state["current_auth_response"] = AuthenticationResponse(
+            success=False,
+            error_message="Authentication Agent Error: No auth_request provided for authentication."
+        )
+        updated_state["is_authenticated"] = False
+        updated_state["salesforce_session"] = None
         return updated_state
 
-    # Note: The prompt guides the LLM to use the tool. 
-    # For this specific agent, the primary goal is to get the structured AuthenticationResponse
-    # from the tool and update the state. Invoking the tool directly here after LLM has (in theory)
-    # decided to use it ensures we get the structured Pydantic model for state update,
-    # rather than trying to parse it from a natural language LLM summary.
-    # The LLM ensures the right tool is picked with the right input (org_alias).
-    # The create_authentication_agent_executor() and its prompt are still valuable for agent definition,
-    # LangSmith tracing of LLM decision-making, and if the agent had more complex logic or tools.
-    
-    # agent_executor = create_authentication_agent_executor() # Executor created but not strictly used for tool call below
-                                                            # for simplified state update.
+    org_alias_to_authenticate = auth_request.org_alias
 
     try:
         auth_tool = SalesforceAuthenticatorTool()
-        # The agent's prompt has {input_org_alias}. Tool's input schema is org_alias.
+        # The tool's input schema is org_alias.
         auth_response: AuthenticationResponse = auth_tool.invoke({"org_alias": org_alias_to_authenticate})
 
         updated_state = state.copy() # Start with a fresh copy of the current state
         
-        # Ensure active_salesforce_sessions is initialized if it's None
-        if updated_state.get("active_salesforce_sessions") is None:
-            updated_state["active_salesforce_sessions"] = {}
-
         if auth_response.success and auth_response.session_details:
             print(f"Authentication Agent: Successfully authenticated to {org_alias_to_authenticate}.")
-            # Directly update the mutable dictionary obtained from the copied state
-            updated_state["active_salesforce_sessions"][org_alias_to_authenticate] = auth_response.session_details
-            updated_state["last_authenticated_org_alias"] = org_alias_to_authenticate
-            updated_state["authentication_error"] = None
+            
+            # Create SalesforceAuthResponse for the salesforce_session field
+            salesforce_session = SalesforceAuthResponse(
+                success=True,
+                session_id=auth_response.session_details.session_id,
+                instance_url=auth_response.session_details.instance_url,
+                user_id=auth_response.session_details.user_id,
+                org_id=auth_response.session_details.org_id,
+                auth_type_used="env_alias"
+            )
+            
+            updated_state["current_auth_response"] = auth_response
+            updated_state["is_authenticated"] = True
+            updated_state["salesforce_session"] = salesforce_session
         else:
             error_msg = auth_response.error_message or "Unknown authentication error."
             print(f"Authentication Agent: Failed to authenticate to {org_alias_to_authenticate}. Error: {error_msg}")
-            updated_state["authentication_error"] = error_msg
-            updated_state["last_authenticated_org_alias"] = None # Clear last authenticated on failure for this alias
-            # Optionally remove from active sessions if a previous session for this alias existed and now failed
-            if org_alias_to_authenticate in updated_state["active_salesforce_sessions"]:
-                del updated_state["active_salesforce_sessions"][org_alias_to_authenticate]
+            updated_state["current_auth_response"] = auth_response
+            updated_state["is_authenticated"] = False
+            updated_state["salesforce_session"] = None
+        
+        # Clear the request after processing
+        updated_state["current_auth_request"] = None
         
         return updated_state
 
     except Exception as e:
         print(f"Authentication Agent: Error invoking tool directly: {str(e)}")
         updated_state = state.copy()
-        updated_state["authentication_error"] = f"Authentication Agent Tool Invocation Error: {str(e)}"
-        updated_state["last_authenticated_org_alias"] = None
+        updated_state["current_auth_response"] = AuthenticationResponse(
+            success=False,
+            error_message=f"Authentication Agent Tool Invocation Error: {str(e)}"
+        )
+        updated_state["is_authenticated"] = False
+        updated_state["salesforce_session"] = None
+        updated_state["current_auth_request"] = None
         return updated_state
 
 # For the `run_authentication_agent` node to work correctly with LangGraph,
@@ -151,7 +156,7 @@ if __name__ == "__main__":
         "active_salesforce_sessions": {},
         "authentication_error": None,
         "last_authenticated_org_alias": None,
-        "current_org_alias_request": test_org_alias,
+        "current_auth_request": AuthenticationRequest(org_alias=test_org_alias),
         # Add other keys from AgentWorkforceState with None or default values if required by other parts,
         # but for run_authentication_agent, these are the primary ones.
     }

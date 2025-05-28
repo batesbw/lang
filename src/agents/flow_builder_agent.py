@@ -3,9 +3,9 @@ from typing import Optional
 from langchain_core.language_models import BaseLanguageModel
 from pydantic import BaseModel
 
-from src.tools.flow_xml_generator_tool import BasicFlowXmlGeneratorTool
-from src.schemas.flow_schemas import FlowBuildRequest, FlowBuildResponse
-from src.schemas.agent_schemas import AgentWorkforceState
+from src.tools.flow_builder_tools import BasicFlowXmlGeneratorTool
+from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
+from src.state.agent_workforce_state import AgentWorkforceState
 
 
 def run_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> AgentWorkforceState:
@@ -22,50 +22,41 @@ def run_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -
     response_updates = {}
 
     if flow_build_request and isinstance(flow_build_request, FlowBuildRequest):
-        print(f"Processing FlowBuildRequest ID: {flow_build_request.request_id}")
-        print(f"Flow Name: {flow_build_request.flow_name}")
-        print(f"Elements: {flow_build_request.elements}")
+        print(f"Processing FlowBuildRequest for Flow: {flow_build_request.flow_api_name}")
+        print(f"Flow Label: {flow_build_request.flow_label}")
+        print(f"Flow Description: {flow_build_request.flow_description}")
 
         tool = BasicFlowXmlGeneratorTool()
         
         try:
-            # The tool's input schema is FlowBuildRequest, so we can pass the model directly
-            # or its dictionary representation. Let's pass the model if the tool supports it,
-            # or .model_dump() if it expects a dict.
-            # Assuming the tool's invoke method can handle the Pydantic model directly
-            # or is designed to take kwargs that match the model fields.
-            # The BasicFlowXmlGeneratorTool takes FlowBuildRequest as input.
-            
-            tool_input = flow_build_request
-            tool_output_str = tool.invoke(tool_input) # tool_output_str is expected to be XML string or error message string
+            # The tool expects individual keyword arguments, so convert the model to dict
+            tool_input = flow_build_request.model_dump()
+            tool_output = tool.invoke(tool_input) # tool_output is expected to be FlowBuildResponse
 
-            # BasicFlowXmlGeneratorTool is expected to return an XML string on success
-            # or a string starting with "Error:" on failure.
-            if tool_output_str.startswith("Error:"):
-                flow_build_response = FlowBuildResponse(
-                    request_id=flow_build_request.request_id,
-                    flow_build_error=tool_output_str,
-                    success=False
-                )
-                print(f"Flow build error: {tool_output_str}")
+            # BasicFlowXmlGeneratorTool returns a FlowBuildResponse object
+            if isinstance(tool_output, FlowBuildResponse):
+                print(f"Flow XML generated successfully for Flow: {flow_build_request.flow_api_name}")
+                response_updates["current_flow_build_response"] = tool_output
             else:
+                # Handle unexpected response type (shouldn't happen with correct tool)
+                error_message = f"Unexpected response type from BasicFlowXmlGeneratorTool: {type(tool_output)}"
+                print(error_message)
                 flow_build_response = FlowBuildResponse(
-                    request_id=flow_build_request.request_id,
-                    generated_flow_xml=tool_output_str,
-                    success=True
+                    success=False,
+                    input_request=flow_build_request,
+                    error_message=error_message
                 )
-                print(f"Flow XML generated successfully for request ID: {flow_build_request.request_id}")
+                response_updates["current_flow_build_response"] = flow_build_response
             
-            response_updates["current_flow_build_response"] = flow_build_response
             response_updates["current_flow_build_request"] = None # Clear the request
 
         except Exception as e:
             error_message = f"FlowBuilderAgent: Error invoking BasicFlowXmlGeneratorTool: {str(e)}"
             print(error_message)
             flow_build_response = FlowBuildResponse(
-                request_id=flow_build_request.request_id,
-                flow_build_error=error_message,
-                success=False
+                success=False,
+                input_request=flow_build_request,
+                error_message=error_message
             )
             response_updates["current_flow_build_response"] = flow_build_response
             response_updates["current_flow_build_request"] = None # Clear the request
@@ -73,11 +64,19 @@ def run_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -
     else:
         if flow_build_request: # It exists but is not the expected type
              print("FlowBuilderAgent: flow_build_request is not a valid FlowBuildRequest instance.")
-             # Optionally, create an error response or handle as appropriate
+             # Create a dummy request for the response since input_request is required
+             dummy_request = FlowBuildRequest(
+                 flow_api_name="unknown",
+                 flow_label="unknown",
+                 screen_api_name="unknown",
+                 screen_label="unknown",
+                 display_text_api_name="unknown",
+                 display_text_content="unknown"
+             )
              response_updates["current_flow_build_response"] = FlowBuildResponse(
-                request_id="unknown", # Or try to get ID if possible
-                flow_build_error="Invalid request type received by FlowBuilderAgent.",
-                success=False
+                success=False,
+                input_request=dummy_request,
+                error_message="Invalid request type received by FlowBuilderAgent."
              )
              response_updates["current_flow_build_request"] = None # Clear the invalid request
         else:
