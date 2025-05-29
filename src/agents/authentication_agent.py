@@ -63,7 +63,15 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
     It expects 'current_auth_request' to be set in the input state.
     """
     print("--- Running Authentication Agent ---")
+    
+    # Debug logging to help diagnose state issues
+    print(f"DEBUG: Received state keys: {list(state.keys())}")
+    print(f"DEBUG: Full state: {state}")
+    
     auth_request_dict = state.get("current_auth_request")
+    print(f"DEBUG: auth_request_dict = {auth_request_dict}")
+    print(f"DEBUG: auth_request_dict type = {type(auth_request_dict)}")
+    print(f"DEBUG: auth_request_dict truthiness = {bool(auth_request_dict)}")
 
     if not auth_request_dict:
         print("Authentication Agent: No auth_request provided in current_auth_request.")
@@ -79,8 +87,10 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
 
     try:
         # Convert dict back to Pydantic model
+        print(f"DEBUG: Attempting to create AuthenticationRequest from: {auth_request_dict}")
         auth_request = AuthenticationRequest(**auth_request_dict)
         org_alias_to_authenticate = auth_request.org_alias
+        print(f"DEBUG: Successfully created AuthenticationRequest, org_alias = {org_alias_to_authenticate}")
 
         auth_tool = SalesforceAuthenticatorTool()
         # The tool's input schema is org_alias.
@@ -119,6 +129,11 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
 
     except Exception as e:
         print(f"Authentication Agent: Error processing authentication: {str(e)}")
+        print(f"DEBUG: Exception type: {type(e)}")
+        print(f"DEBUG: Exception args: {e.args}")
+        import traceback
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+        
         updated_state = state.copy()
         auth_response = AuthenticationResponse(
             success=False,
