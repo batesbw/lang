@@ -654,9 +654,8 @@ class EnhancedFlowBuilderAgent:
                     "1. You MUST fulfill ALL the original business requirements and user story",
                     "2. You MUST implement ALL the specific fixes listed above",
                     "3. You MUST avoid ALL the error patterns that caused previous failures",
-                    "4. You MUST generate completely new, valid XML (do not copy from previous attempt)",
-                    "5. You MUST maintain the flow's intended business functionality",
-                    "6. You MUST use the memory context to build upon previous learnings",
+                    "4. You MUST maintain the flow's intended business functionality",
+                    "5. You MUST use the memory context to build upon previous learnings",
                     ""
                 ])
                 
@@ -737,6 +736,7 @@ CRITICAL INSTRUCTIONS:
 3. Include all required elements: apiVersion, label, processType, status, etc.
 4. For retry attempts, carefully analyze the previous error and fix the specific issues
 5. Use proper Salesforce Flow XML namespace: http://soap.sforce.com/2006/04/metadata
+6. Record Triggered Flows can't combine Create/Update AND Delete operations in the same flow. A separate flow is required for the Delete operation.
 7. Include processMetadataValues for proper Flow Builder support
 8. Ensure all API names are valid (alphanumeric, start with letter, no spaces/hyphens)
 9. Start your response immediately with <?xml or <Flow - no other text
