@@ -737,7 +737,6 @@ CRITICAL INSTRUCTIONS:
 3. Include all required elements: apiVersion, label, processType, status, etc.
 4. For retry attempts, carefully analyze the previous error and fix the specific issues
 5. Use proper Salesforce Flow XML namespace: http://soap.sforce.com/2006/04/metadata
-6. Always set status to "Draft" for initial deployment
 7. Include processMetadataValues for proper Flow Builder support
 8. Ensure all API names are valid (alphanumeric, start with letter, no spaces/hyphens)
 9. Start your response immediately with <?xml or <Flow - no other text

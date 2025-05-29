@@ -173,31 +173,44 @@ class FlowScannerTool(BaseTool):
                 
                 # Check if this is an error response from the scanner
                 if isinstance(scanner_data, dict) and "name" in scanner_data and scanner_data.get("name") in ["TypeError", "Error"]:
-                    # Scanner crashed - this is a scanner error, not flow validation issues
+                    # This is a Flow validation error, not a scanner crash
+                    # The scanner encountered a structural issue with the Flow XML
                     error_message = scanner_data.get("message", "Unknown scanner error")
-                    print(f"❌ Scanner crashed with error: {error_message}")
+                    print(f"❌ Scanner detected Flow XML structural issue: {error_message}")
+                    
+                    # Convert this to a validation rule instead of treating as a crash
+                    structural_error = FlowScannerRule(
+                        rule_name="FlowStructuralError",
+                        severity="error",
+                        message=f"Flow XML structural issue: {error_message}",
+                        location=None,
+                        element_name=None,
+                        details={"scanner_error_type": scanner_data.get("name"), "scanner_error_message": error_message},
+                        category="Structure",
+                        fix_suggestion="Check Flow XML structure for missing or malformed elements"
+                    )
                     
                     return {
                         "request_id": request_id,
                         "flow_name": flow_name,
                         "flow_api_name": flow_name,
-                        "success": False,  # Scanner failed to run
-                        "is_valid": False,  # Can't determine validity due to scanner crash
-                        "error_message": f"Lightning Flow Scanner crashed: {error_message}",
+                        "success": True,  # Scanner ran successfully and detected an issue
+                        "is_valid": False,  # Flow is not valid due to structural issue
+                        "error_message": None,  # No tool error - this is a validation error
                         "scanner_version": scanner_version,
                         "execution_time_seconds": execution_time,
-                        "errors": [],
+                        "errors": [structural_error.model_dump()],
                         "warnings": [],
                         "notes": [],
-                        "error_count": 0,
+                        "error_count": 1,
                         "warning_count": 0,
                         "note_count": 0,
                         "summary": {
-                            "total_issues": 0,
-                            "critical_issues": 0,
+                            "total_issues": 1,
+                            "critical_issues": 1,
                             "flow_passed": False,
                             "scan_timestamp": time.time(),
-                            "scanner_crashed": True
+                            "scanner_crashed": False
                         }
                     }
                 
