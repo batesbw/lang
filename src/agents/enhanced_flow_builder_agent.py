@@ -225,7 +225,7 @@ class EnhancedFlowBuilderAgent:
         return knowledge
     
     def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any]) -> str:
-        """Generate an enhanced prompt using retrieved knowledge"""
+        """Generate a unified prompt with user story, RAG knowledge, and optional retry context"""
         
         prompt_parts = [
             f"Create a Salesforce flow based on the following requirements:",
@@ -234,6 +234,41 @@ class EnhancedFlowBuilderAgent:
             f"Description: {request.flow_description}",
             ""
         ]
+        
+        # Add comprehensive user story context if available
+        if request.user_story:
+            prompt_parts.extend([
+                "USER STORY:",
+                f"Title: {request.user_story.title}",
+                f"Description: {request.user_story.description}",
+                "",
+                "ACCEPTANCE CRITERIA:",
+            ])
+            for i, criteria in enumerate(request.user_story.acceptance_criteria, 1):
+                prompt_parts.append(f"{i}. {criteria}")
+            
+            prompt_parts.extend([
+                "",
+                f"Priority: {request.user_story.priority}",
+            ])
+            
+            if request.user_story.business_context:
+                prompt_parts.extend([
+                    f"Business Context: {request.user_story.business_context}",
+                    ""
+                ])
+            
+            if request.user_story.affected_objects:
+                prompt_parts.extend([
+                    f"Affected Objects: {', '.join(request.user_story.affected_objects)}",
+                    ""
+                ])
+            
+            if request.user_story.user_personas:
+                prompt_parts.extend([
+                    f"User Personas: {', '.join(request.user_story.user_personas)}",
+                    ""
+                ])
         
         # Add best practices context
         if knowledge["best_practices"]:
@@ -258,6 +293,59 @@ class EnhancedFlowBuilderAgent:
                 prompt_parts.append(f"- {doc['content'][:300]}...")
             prompt_parts.append("")
         
+        # Add retry context if this is a retry attempt
+        if request.retry_context:
+            retry_context = request.retry_context
+            deployment_error = retry_context.get("deployment_error")
+            component_errors = retry_context.get("component_errors", [])
+            original_flow_xml = retry_context.get("original_flow_xml")
+            retry_attempt = retry_context.get("retry_attempt", 1)
+            
+            if deployment_error or original_flow_xml:
+                prompt_parts.extend([
+                    f"PREVIOUS ATTEMPT CONTEXT (Retry #{retry_attempt}):",
+                    "The previous flow deployment failed and needs to be rebuilt.",
+                    ""
+                ])
+                
+                if deployment_error:
+                    prompt_parts.extend([
+                        "Previous deployment error:",
+                        f"{deployment_error}",
+                        ""
+                    ])
+                
+                if component_errors:
+                    prompt_parts.append("Component-level errors:")
+                    for error in component_errors:
+                        if isinstance(error, dict):
+                            prompt_parts.append(f"- {error.get('componentType', 'Unknown')}: {error.get('problem', 'Unknown error')}")
+                        else:
+                            prompt_parts.append(f"- {str(error)}")
+                    prompt_parts.append("")
+                
+                if original_flow_xml:
+                    prompt_parts.extend([
+                        "Previous flow XML (for reference only):",
+                        f"{original_flow_xml[:1000]}{'...' if len(original_flow_xml) > 1000 else ''}",
+                        ""
+                    ])
+                
+                prompt_parts.extend([
+                    "IMPORTANT REQUIREMENTS FOR RETRY:",
+                    "1. You MUST fulfill ALL the original business requirements and user story",
+                    "2. You MUST address the deployment error that caused the failure",
+                    "3. You MUST maintain the flow's intended functionality and business logic",
+                    "4. Common deployment fixes to apply:",
+                    "   - API names must be alphanumeric and start with a letter (no spaces, hyphens, or special characters)",
+                    "   - All required elements and configurations must be present",
+                    "   - Element references must be valid",
+                    "   - Flow syntax and structure must be correct",
+                    "",
+                    "APPROACH: Start with the business requirements, design a flow that meets them, and apply deployment error fixes as you build.",
+                    ""
+                ])
+        
         prompt_parts.extend([
             "REQUIREMENTS:",
             "1. Generate a complete, production-ready Salesforce flow XML",
@@ -273,7 +361,7 @@ class EnhancedFlowBuilderAgent:
         return "\n".join(prompt_parts)
     
     def generate_flow_with_rag(self, request: FlowBuildRequest) -> FlowBuildResponse:
-        """Generate a flow using RAG-enhanced context"""
+        """Generate a flow using unified RAG-enhanced approach for both initial and retry attempts"""
         
         try:
             # Step 1: Analyze requirements
@@ -284,7 +372,8 @@ class EnhancedFlowBuilderAgent:
             logger.info("Retrieving relevant knowledge from RAG sources")
             knowledge = self.retrieve_knowledge(analysis)
             
-            # Step 3: Generate enhanced prompt
+            # Step 3: Generate unified prompt (includes user story, RAG knowledge, and optional retry context)
+            logger.info("Generating unified enhanced prompt")
             enhanced_prompt = self.generate_enhanced_prompt(request, knowledge)
             
             # Step 4: Use LLM to generate flow design
@@ -320,6 +409,17 @@ class EnhancedFlowBuilderAgent:
                     f"Knowledge-based design for {analysis['primary_use_case']} use case"
                 ]
                 
+                # Add user story context if available
+                if request.user_story:
+                    enhanced_recommendations.append(f"Built to fulfill user story: {request.user_story.title}")
+                    enhanced_best_practices.append(f"Designed for {request.user_story.priority} priority user story")
+                
+                # Add retry-specific context if applicable
+                if request.retry_context:
+                    retry_attempt = request.retry_context.get('retry_attempt', 1)
+                    enhanced_recommendations.append(f"Generated addressing deployment failures (retry #{retry_attempt})")
+                    enhanced_best_practices.append("Incorporated deployment error resolution strategies")
+                
                 # Create enhanced response with valid fields only
                 enhanced_response = FlowBuildResponse(
                     success=True,
@@ -350,7 +450,7 @@ class EnhancedFlowBuilderAgent:
                 input_request=request,
                 error_message=error_message
             )
-    
+
     def analyze_deployment_failure(self, error_message: str, flow_xml: str, component_errors: Optional[List[str]] = None) -> Dict[str, Any]:
         """Analyze a deployment failure and learn from it - REMOVED for simplification"""
         # Method removed - using simplified approach
@@ -371,93 +471,12 @@ class EnhancedFlowBuilderAgent:
         # Method removed - using simplified approach  
         pass
 
-    def generate_fix_for_deployment_failure(self, request: FlowBuildRequest, original_flow_xml: str, deployment_error: str, component_errors: List[Dict]) -> FlowBuildResponse:
-        """Generate a fix for a deployment failure using the original Flow XML and error details"""
-        logger.info(f"Generating fix for deployment failure: {deployment_error}")
-        
-        try:
-            # Format component errors for the prompt
-            component_error_text = ""
-            if component_errors:
-                component_error_text = "\n\nComponent Errors:\n"
-                for error in component_errors:
-                    if isinstance(error, dict):
-                        component_error_text += f"- {error.get('componentType', 'Unknown')}: {error.get('problem', 'Unknown error')} (in {error.get('fileName', 'unknown file')})\n"
-                    else:
-                        component_error_text += f"- {str(error)}\n"
-            
-            # Create a simple fix prompt
-            fix_prompt = f"""
-You are a Salesforce Flow expert. A Flow deployment failed and you need to fix the XML.
-
-ORIGINAL FLOW REQUEST:
-- Flow Name: {request.flow_api_name}
-- Flow Label: {request.flow_label}
-- Description: {request.flow_description}
-
-DEPLOYMENT ERROR:
-{deployment_error}
-{component_error_text}
-
-ORIGINAL FLOW XML:
-{original_flow_xml}
-
-INSTRUCTIONS:
-1. Analyze the deployment error and identify what needs to be fixed in the Flow XML
-2. Generate a corrected version of the Flow XML that addresses the deployment error
-3. Common fixes include:
-   - Fixing invalid API names (must be alphanumeric, start with letter)
-   - Correcting missing required elements
-   - Fixing invalid element configurations
-   - Addressing namespace or version issues
-
-Please provide the corrected Flow XML that will deploy successfully.
-"""
-
-            # Generate the fix using the LLM
-            response = self.llm.invoke(fix_prompt)
-            
-            # Extract XML from the response
-            if hasattr(response, 'content'):
-                fixed_xml = response.content
-            else:
-                fixed_xml = str(response)
-            
-            # Clean up the XML (remove markdown formatting if present)
-            if "```xml" in fixed_xml:
-                fixed_xml = fixed_xml.split("```xml")[1].split("```")[0].strip()
-            elif "```" in fixed_xml:
-                fixed_xml = fixed_xml.split("```")[1].split("```")[0].strip()
-            
-            # Validate that we have XML
-            if not fixed_xml.strip().startswith("<?xml"):
-                return FlowBuildResponse(
-                    success=False,
-                    input_request=request,
-                    error_message=f"Generated fix does not contain valid XML. Response: {fixed_xml[:200]}..."
-                )
-            
-            return FlowBuildResponse(
-                success=True,
-                input_request=request,
-                flow_xml=fixed_xml
-            )
-            
-        except Exception as e:
-            error_message = f"Error generating deployment failure fix: {str(e)}"
-            logger.error(error_message)
-            return FlowBuildResponse(
-                success=False,
-                input_request=request,
-                error_message=error_message
-            )
-
 
 def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> AgentWorkforceState:
     """
-    Run the Enhanced Flow Builder Agent with RAG capabilities and simple retry logic
+    Run the Enhanced Flow Builder Agent with unified RAG approach for all attempts
     """
-    print("----- ENHANCED FLOW BUILDER AGENT (with RAG & Simple Retry) -----")
+    print("----- ENHANCED FLOW BUILDER AGENT (with Unified RAG Approach) -----")
     
     flow_build_request_dict = state.get("current_flow_build_request")
     build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
@@ -468,49 +487,39 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
             # Convert dict back to Pydantic model
             flow_build_request = FlowBuildRequest(**flow_build_request_dict)
             
-            print(f"Processing enhanced FlowBuildRequest for Flow: {flow_build_request.flow_api_name}")
+            print(f"Processing FlowBuildRequest for Flow: {flow_build_request.flow_api_name}")
             print(f"Flow Description: {flow_build_request.flow_description}")
             print(f"Build/Deploy retry count: {build_deploy_retry_count}")
+            
+            # Check for retry context and log accordingly
+            if flow_build_request.retry_context:
+                retry_attempt = flow_build_request.retry_context.get('retry_attempt', 1)
+                print(f"🔄 RETRY MODE: Processing attempt #{retry_attempt}")
+                print(f"🔧 Will rebuild flow addressing previous deployment failure")
+                print(f"🎯 Using unified RAG approach with integrated failure context")
+            else:
+                print("📝 INITIAL ATTEMPT: Using unified RAG approach")
             
             # Initialize the enhanced agent
             agent = EnhancedFlowBuilderAgent(llm)
             
-            # Check if this is a retry with failure context
-            retry_context = flow_build_request.retry_context
-            if retry_context and retry_context.get("is_retry"):
-                print(f"🔄 RETRY MODE: Processing with failure context (attempt #{retry_context.get('retry_attempt', '?')})")
-                
-                original_flow_xml = retry_context.get("original_flow_xml", "")
-                deployment_error = retry_context.get("deployment_error", "Unknown error")
-                component_errors = retry_context.get("component_errors", [])
-                
-                print(f"🔧 Fixing deployment failure:")
-                print(f"   Error: {deployment_error}")
-                print(f"   Component errors: {len(component_errors)}")
-                
-                # Generate a fix based on the failure information
-                flow_response = agent.generate_fix_for_deployment_failure(
-                    flow_build_request, 
-                    original_flow_xml, 
-                    deployment_error, 
-                    component_errors
-                )
-                
-                print(f"🛠️ Generated fix for deployment failure")
-            else:
-                # Normal flow generation
-                print("📝 Normal flow generation mode")
-                flow_response = agent.generate_flow_with_rag(flow_build_request)
+            # Use the unified RAG approach for all scenarios
+            # The method automatically handles user story, RAG knowledge, and optional retry context
+            flow_response = agent.generate_flow_with_rag(flow_build_request)
             
             # Convert response to dict for state storage
             response_updates["current_flow_build_response"] = flow_response.model_dump()
             
             if flow_response.success:
-                print(f"✅ Enhanced Flow building successful for: {flow_build_request.flow_api_name}")
-                if build_deploy_retry_count > 0:
-                    print(f"   🎯 Successfully fixed deployment failure on retry #{build_deploy_retry_count}")
+                print(f"✅ Flow building successful for: {flow_build_request.flow_api_name}")
+                if flow_build_request.retry_context:
+                    retry_attempt = flow_build_request.retry_context.get('retry_attempt', 1)
+                    print(f"   🎯 Successfully rebuilt flow addressing deployment issues (retry #{retry_attempt})")
+                    print(f"   🔄 Maintained business requirements while fixing deployment errors")
+                else:
+                    print(f"   📋 Successfully built flow meeting user story requirements")
             else:
-                print(f"❌ Enhanced Flow building failed: {flow_response.error_message}")
+                print(f"❌ Flow building failed: {flow_response.error_message}")
                 
         except Exception as e:
             error_message = f"Enhanced FlowBuilderAgent error: {str(e)}"
