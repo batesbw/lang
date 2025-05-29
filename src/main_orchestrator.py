@@ -18,6 +18,7 @@ from langchain_core.language_models import BaseLanguageModel
 from src.state.agent_workforce_state import AgentWorkforceState
 from src.agents.authentication_agent import run_authentication_agent
 from src.agents.enhanced_flow_builder_agent import run_enhanced_flow_builder_agent
+from src.agents.flow_validation_agent import run_flow_validation_agent
 from src.agents.deployment_agent import run_deployment_agent
 from src.schemas.auth_schemas import AuthenticationRequest, SalesforceAuthResponse
 from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
@@ -36,8 +37,14 @@ if not os.getenv("LANGSMITH_API_KEY"):
 
 # Initialize LLM with configurable model
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-LLM = ChatAnthropic(model=ANTHROPIC_MODEL, temperature=0)
-print(f"Initialized LLM with model: {ANTHROPIC_MODEL}")
+LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))  # Configurable max tokens
+
+LLM = ChatAnthropic(
+    model=ANTHROPIC_MODEL, 
+    temperature=0, 
+    max_tokens=LLM_MAX_TOKENS  # Use configurable value
+)
+print(f"Initialized LLM with model: {ANTHROPIC_MODEL}, max_tokens: {LLM_MAX_TOKENS}")
 
 # Initialize retry configuration
 MAX_BUILD_DEPLOY_RETRIES = int(os.getenv("MAX_BUILD_DEPLOY_RETRIES", "3"))
@@ -94,6 +101,20 @@ def deployment_node(state: AgentWorkforceState) -> AgentWorkforceState:
         return updated_state
 
 
+def flow_validation_node(state: AgentWorkforceState) -> AgentWorkforceState:
+    """
+    LangGraph node for the Flow Validation Agent.
+    """
+    print("\n=== FLOW VALIDATION NODE ===")
+    try:
+        return run_flow_validation_agent(state, LLM)
+    except Exception as e:
+        print(f"Error in flow_validation_node: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Flow Validation Node Error: {str(e)}"
+        return updated_state
+
+
 def should_continue_after_auth(state: AgentWorkforceState) -> str:
     """
     Conditional edge function to determine if we should continue after authentication.
@@ -112,10 +133,33 @@ def should_continue_after_flow_build(state: AgentWorkforceState) -> str:
     """
     flow_response = state.get("current_flow_build_response")
     if flow_response and flow_response.get("success"):
-        print("Flow building successful, proceeding to Deployment.")
-        return "deployment"
+        print("Flow building successful, proceeding to Flow Validation.")
+        return "validation"
     else:
         print("Flow building failed, ending workflow.")
+        return END
+
+
+def should_continue_after_validation(state: AgentWorkforceState) -> str:
+    """
+    Conditional edge function to determine workflow continuation after flow validation.
+    """
+    validation_response = state.get("current_flow_validation_response")
+    validation_requires_retry = state.get("validation_requires_retry", False)
+    build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
+    max_retries = state.get("max_build_deploy_retries", MAX_BUILD_DEPLOY_RETRIES)
+    
+    if validation_response and validation_response.get("success") and validation_response.get("is_valid"):
+        print("✅ Flow validation passed, proceeding to deployment.")
+        return "deployment"
+    elif validation_requires_retry and build_deploy_retry_count < max_retries:
+        print(f"🔄 Flow validation failed, retrying flow build (attempt #{build_deploy_retry_count + 1})")
+        return "retry_validation"
+    else:
+        if build_deploy_retry_count >= max_retries:
+            print(f"🛑 Maximum retries ({max_retries}) reached for validation fixes, ending workflow")
+        else:
+            print("❌ Flow validation failed and retry not recommended, ending workflow.")
         return END
 
 
@@ -162,9 +206,9 @@ def should_retry_after_failure(state: AgentWorkforceState) -> str:
 def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     Node to prepare for a retry attempt after deployment failure.
-    Simply passes the original Flow XML and failure reason to FlowBuilder.
+    Enhanced to provide structured error analysis and specific guidance.
     """
-    print("\n=== PREPARING RETRY FLOW BUILD REQUEST ===")
+    print("\n=== PREPARING ENHANCED RETRY FLOW BUILD REQUEST ===")
     
     # Increment retry count
     current_retry_count = state.get("build_deploy_retry_count", 0) + 1
@@ -178,29 +222,43 @@ def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceStat
             last_build_response = FlowBuildResponse(**last_build_response_dict)
             original_request = last_build_response.input_request
             
-            print(f"🔄 Setting up retry #{current_retry_count} for flow: {original_request.flow_api_name}")
+            print(f"🔄 Setting up enhanced retry #{current_retry_count} for flow: {original_request.flow_api_name}")
             
-            # Create retry request with simple failure context
+            # Create retry request with enhanced failure context
             retry_request = original_request.model_copy()
             
-            # Add simple failure context for the FlowBuilder to use
+            # Analyze the deployment error for specific fixes
+            error_analysis = _analyze_deployment_error(
+                deployment_response.get("error_message", "Unknown error"),
+                deployment_response.get("component_errors", []),
+                last_build_response.flow_xml
+            )
+            
+            # Enhanced retry context with structured analysis
             retry_request.retry_context = {
                 "is_retry": True,
                 "retry_attempt": current_retry_count,
                 "original_flow_xml": last_build_response.flow_xml,
                 "deployment_error": deployment_response.get("error_message", "Unknown error"),
-                "component_errors": deployment_response.get("component_errors", [])
+                "component_errors": deployment_response.get("component_errors", []),
+                "error_analysis": error_analysis,
+                "specific_fixes_needed": error_analysis["required_fixes"],
+                "common_patterns": error_analysis["error_patterns"],
+                "previous_attempts_summary": _get_previous_attempts_summary(state, current_retry_count)
             }
             
-            print(f"🔧 Passing failure details to FlowBuilder:")
-            print(f"   Error: {deployment_response.get('error_message', 'Unknown error')}")
-            print(f"   Component errors: {len(deployment_response.get('component_errors', []))}")
+            print(f"🔧 Enhanced failure analysis completed:")
+            print(f"   Primary error type: {error_analysis['error_type']}")
+            print(f"   Specific fixes needed: {len(error_analysis['required_fixes'])}")
+            print(f"   Error patterns detected: {len(error_analysis['error_patterns'])}")
+            for fix in error_analysis['required_fixes'][:3]:  # Show first 3 fixes
+                print(f"     - {fix}")
             
             updated_state = state.copy()
             updated_state["current_flow_build_request"] = retry_request.model_dump()
             updated_state["build_deploy_retry_count"] = current_retry_count
             
-            print(f"✅ Retry request prepared - attempt #{current_retry_count}")
+            print(f"✅ Enhanced retry request prepared - attempt #{current_retry_count}")
             return updated_state
             
         except Exception as e:
@@ -213,6 +271,124 @@ def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceStat
         updated_state = state.copy()
         updated_state["error_message"] = "Cannot retry: no previous build/deployment response"
         return updated_state
+
+
+def _analyze_deployment_error(error_message: str, component_errors: list, flow_xml: str) -> dict:
+    """
+    Analyze deployment errors to provide structured guidance for fixes
+    """
+    analysis = {
+        "error_type": "unknown",
+        "severity": "medium",
+        "required_fixes": [],
+        "error_patterns": [],
+        "xml_issues": [],
+        "api_name_issues": [],
+        "structural_issues": []
+    }
+    
+    error_text = error_message.lower() if error_message else ""
+    
+    # Analyze error patterns
+    if "invalid name" in error_text or "api name" in error_text:
+        analysis["error_type"] = "api_name_validation"
+        analysis["severity"] = "high"
+        analysis["api_name_issues"].append("Invalid API name format detected")
+        analysis["required_fixes"].extend([
+            "Fix API names to be alphanumeric and start with a letter",
+            "Remove spaces, hyphens, and special characters from all API names",
+            "Ensure API names follow Salesforce naming conventions"
+        ])
+        analysis["error_patterns"].append("API_NAME_INVALID")
+    
+    if "duplicate" in error_text and "element" in error_text:
+        analysis["error_type"] = "duplicate_elements"
+        analysis["severity"] = "high"
+        analysis["structural_issues"].append("Duplicate element names detected")
+        analysis["required_fixes"].extend([
+            "Ensure all flow element names are unique",
+            "Check for duplicate screen, decision, or assignment names",
+            "Use incremental naming (e.g., Screen1, Screen2) for multiple elements"
+        ])
+        analysis["error_patterns"].append("DUPLICATE_ELEMENTS")
+    
+    if "element reference" in error_text or "target reference" in error_text:
+        analysis["error_type"] = "invalid_references"
+        analysis["severity"] = "high"
+        analysis["structural_issues"].append("Invalid element references")
+        analysis["required_fixes"].extend([
+            "Fix element references to point to valid flow elements",
+            "Ensure all connector targetReference values match existing element names",
+            "Check start element connector references"
+        ])
+        analysis["error_patterns"].append("INVALID_REFERENCES")
+    
+    if "required field" in error_text or "missing" in error_text:
+        analysis["error_type"] = "missing_required_fields"
+        analysis["severity"] = "high"
+        analysis["structural_issues"].append("Missing required fields or elements")
+        analysis["required_fixes"].extend([
+            "Add all required flow elements and properties",
+            "Ensure proper flow structure with start element",
+            "Include mandatory metadata elements"
+        ])
+        analysis["error_patterns"].append("MISSING_REQUIRED_FIELDS")
+    
+    if "xml" in error_text or "malformed" in error_text or "syntax" in error_text:
+        analysis["error_type"] = "xml_syntax"
+        analysis["severity"] = "critical"
+        analysis["xml_issues"].append("XML syntax or structure issues")
+        analysis["required_fixes"].extend([
+            "Fix XML syntax errors and malformed elements",
+            "Ensure proper XML namespace and structure",
+            "Validate XML against Salesforce Flow schema"
+        ])
+        analysis["error_patterns"].append("XML_SYNTAX_ERROR")
+    
+    # Analyze component errors for additional insights
+    for error in component_errors:
+        if isinstance(error, dict):
+            problem = error.get("problem", "").lower()
+            component_type = error.get("componentType", "")
+            
+            if "flow" in component_type.lower():
+                if "name" in problem:
+                    analysis["api_name_issues"].append(f"Flow component naming issue: {problem}")
+                elif "reference" in problem:
+                    analysis["structural_issues"].append(f"Flow reference issue: {problem}")
+    
+    # If no specific pattern detected, provide general guidance
+    if analysis["error_type"] == "unknown":
+        analysis["error_type"] = "general_deployment_failure"
+        analysis["required_fixes"] = [
+            "Review the deployment error message carefully",
+            "Ensure all flow elements have valid configurations",
+            "Check that the flow follows Salesforce best practices",
+            "Validate the flow XML structure and content"
+        ]
+    
+    return analysis
+
+
+def _get_previous_attempts_summary(state: AgentWorkforceState, current_retry: int) -> str:
+    """
+    Generate a summary of previous attempts for context
+    """
+    if current_retry <= 1:
+        return "This is the first retry attempt."
+    
+    summary = f"This is retry attempt #{current_retry}. "
+    
+    # You could enhance this by storing more detailed attempt history
+    # For now, provide basic context
+    if current_retry == 2:
+        summary += "The first retry failed. Focus on addressing the core deployment error."
+    elif current_retry == 3:
+        summary += "Two previous retries failed. Consider a fundamentally different approach."
+    else:
+        summary += f"Multiple retries ({current_retry - 1}) have failed. The error may require manual investigation."
+    
+    return summary
 
 
 def record_build_deploy_cycle(state: AgentWorkforceState) -> AgentWorkforceState:
@@ -332,9 +508,31 @@ def prepare_deployment_request(state: AgentWorkforceState) -> AgentWorkforceStat
         return updated_state
 
 
+def prepare_retry_validation_request(state: AgentWorkforceState) -> AgentWorkforceState:
+    """
+    Node to prepare for a retry attempt after validation failure.
+    Uses the validation context created by the Flow Validation Agent.
+    """
+    print("\n=== PREPARING RETRY REQUEST FROM VALIDATION FAILURE ===")
+    
+    # The validation agent already prepared the retry context
+    # We just need to ensure the state is ready for flow builder retry
+    validation_requires_retry = state.get("validation_requires_retry", False)
+    
+    if validation_requires_retry:
+        print("✅ Retry request already prepared by Flow Validation Agent")
+        # The validation agent already updated the flow build request and retry count
+        return state
+    else:
+        print("❌ No validation retry context found")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Validation retry requested but no retry context available"
+        return updated_state
+
+
 def create_workflow() -> StateGraph:
     """
-    Creates and configures the LangGraph workflow with build/deploy retry capabilities.
+    Creates and configures the LangGraph workflow with Flow Validation and retry capabilities.
     """
     # Create the state graph
     workflow = StateGraph(AgentWorkforceState)
@@ -343,10 +541,12 @@ def create_workflow() -> StateGraph:
     workflow.add_node("authentication", authentication_node)
     workflow.add_node("prepare_flow_request", prepare_flow_build_request)
     workflow.add_node("flow_builder", flow_builder_node)
+    workflow.add_node("flow_validation", flow_validation_node)
     workflow.add_node("prepare_deployment_request", prepare_deployment_request)
     workflow.add_node("deployment", deployment_node)
     workflow.add_node("record_cycle", record_build_deploy_cycle)
     workflow.add_node("prepare_retry_flow_request", prepare_retry_flow_request)
+    workflow.add_node("prepare_retry_validation_request", prepare_retry_validation_request)
     
     # Set entry point
     workflow.set_entry_point("authentication")
@@ -364,21 +564,34 @@ def create_workflow() -> StateGraph:
     # Add regular edges
     workflow.add_edge("prepare_flow_request", "flow_builder")
     
+    # Flow builder -> Flow validation
     workflow.add_conditional_edges(
         "flow_builder",
         should_continue_after_flow_build,
         {
-            "deployment": "prepare_deployment_request",
+            "validation": "flow_validation",
             END: END
         }
     )
     
+    # Flow validation -> Deployment or Retry
+    workflow.add_conditional_edges(
+        "flow_validation",
+        should_continue_after_validation,
+        {
+            "deployment": "prepare_deployment_request",
+            "retry_validation": "prepare_retry_validation_request",
+            END: END
+        }
+    )
+    
+    # Deployment preparation and execution
     workflow.add_edge("prepare_deployment_request", "deployment")
     
     # Add edge to record cycle after deployment
     workflow.add_edge("deployment", "record_cycle")
     
-    # Add conditional edges for retry logic after recording the cycle
+    # Add conditional edges for retry logic after recording the cycle (deployment failures)
     workflow.add_conditional_edges(
         "record_cycle",
         should_continue_after_deployment,
@@ -388,8 +601,11 @@ def create_workflow() -> StateGraph:
         }
     )
     
-    # Add edge from retry preparation back to flow builder
+    # Add edge from deployment retry preparation back to flow builder
     workflow.add_edge("prepare_retry_flow_request", "flow_builder")
+    
+    # Add edge from validation retry preparation back to flow builder
+    workflow.add_edge("prepare_retry_validation_request", "flow_builder")
     
     return workflow
 
@@ -420,6 +636,8 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         "salesforce_session": None,
         "current_flow_build_request": None,
         "current_flow_build_response": None,
+        "current_flow_validation_response": None,
+        "validation_requires_retry": False,
         "current_deployment_request": None,
         "current_deployment_response": None,
         "messages": [],
@@ -521,6 +739,32 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
             print("❌ Flow Building: FAILED (Could not parse response)")
     else:
         print("⏭️  Flow Building: SKIPPED")
+    
+    # Flow validation status
+    validation_response_dict = final_state.get("current_flow_validation_response")
+    if validation_response_dict:
+        try:
+            from src.schemas.flow_validation_schemas import FlowValidationResponse
+            validation_response = FlowValidationResponse(**validation_response_dict)
+            if validation_response.success and validation_response.is_valid:
+                print("✅ Flow Validation: SUCCESS")
+                print(f"   Scanner Version: {validation_response.scanner_version or 'unknown'}")
+                if validation_response.warning_count > 0:
+                    print(f"   Warnings: {validation_response.warning_count}")
+            elif validation_response.success and not validation_response.is_valid:
+                print("❌ Flow Validation: FAILED")
+                print(f"   Errors: {validation_response.error_count}")
+                print(f"   Warnings: {validation_response.warning_count}")
+                if validation_response.errors:
+                    print(f"   Top Error: {validation_response.errors[0].rule_name}")
+            else:
+                print("❌ Flow Validation: TOOL ERROR")
+                if validation_response.error_message:
+                    print(f"   Error: {validation_response.error_message}")
+        except Exception:
+            print("❌ Flow Validation: FAILED (Could not parse response)")
+    else:
+        print("⏭️  Flow Validation: SKIPPED")
     
     # Deployment status
     deployment_response_dict = final_state.get("current_deployment_response")

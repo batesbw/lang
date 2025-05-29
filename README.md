@@ -358,3 +358,251 @@ This project is for educational and professional development purposes. Please en
 **Ready to revolutionize Salesforce Flow development with AI agents? 🚀**
 
 *Now with enhanced natural language processing and intelligent flow generation!*
+
+## Features
+
+- **Authentication Agent**: Secure Salesforce org authentication
+- **Flow Builder Agent**: Intelligent Flow XML generation with retry capabilities
+- **Flow Validation Agent**: Automated Flow validation using Lightning Flow Scanner
+- **Deployment Agent**: Automated Flow deployment with error handling
+- **Intelligent Retry Logic**: Automatic retries for validation errors and deployment failures
+- **Comprehensive Logging**: Detailed execution tracking and error reporting
+
+## Architecture
+
+The system uses a multi-agent architecture orchestrated with LangGraph:
+
+```
+Authentication → Flow Building → Flow Validation → Deployment
+                     ↑              ↓
+                     └── Retry Loop ←┘
+```
+
+### Agents
+
+1. **Authentication Agent**: Handles Salesforce org login and session management
+2. **Flow Builder Agent**: Creates Salesforce Flow XML from requirements
+3. **Flow Validation Agent**: Validates flows using Lightning Flow Scanner
+4. **Deployment Agent**: Deploys flows to Salesforce orgs
+
+### Retry Logic
+
+The system includes intelligent retry mechanisms:
+- **Validation Retry**: If Flow Scanner finds errors, the system retries with specific error context
+- **Deployment Retry**: If deployment fails, the system retries with enhanced error analysis
+- **Configurable Limits**: Maximum retry attempts are configurable via environment variables
+
+## Prerequisites
+
+### Required Software
+
+- Python 3.9+
+- Node.js 14.x+
+- Salesforce CLI (`sf`)
+- Lightning Flow Scanner
+
+### Install Prerequisites
+
+```bash
+# Install Salesforce CLI
+npm install -g @salesforce/cli
+
+# Install Lightning Flow Scanner
+npm install -g @salesforce/sfdx-scanner
+
+# Initialize Flow Scanner (first time)
+sf scanner rule list
+```
+
+See [FLOW_SCANNER_SETUP.md](FLOW_SCANNER_SETUP.md) for detailed Lightning Flow Scanner installation and configuration.
+
+### Environment Variables
+
+Create a `.env` file in the root directory:
+
+```env
+# Required
+ANTHROPIC_API_KEY=your-anthropic-api-key
+
+# Optional
+LANGSMITH_API_KEY=your-langsmith-api-key
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+MAX_BUILD_DEPLOY_RETRIES=3
+
+# Flow Scanner Configuration
+FLOW_SCANNER_CLI_PATH=sf
+FLOW_SCANNER_TIMEOUT=30
+FLOW_SCANNER_OUTPUT_FORMAT=json
+```
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd salesforce-agent-workforce
+```
+
+2. Install Python dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Install prerequisites (see above)
+
+4. Configure environment variables
+
+## Usage
+
+### Basic Usage
+
+Run the workflow with a Salesforce org alias:
+
+```bash
+python src/main_orchestrator.py SANDBOX_ALIAS
+```
+
+### Testing Flow Validation
+
+Test the Flow Validation Agent:
+
+```bash
+python tests/test_flow_validation_agent.py
+```
+
+### With User Stories
+
+You can provide user stories in the workflow state to generate flows based on specific requirements.
+
+## Flow Validation
+
+The Flow Validation Agent integrates with Salesforce's Lightning Flow Scanner to:
+
+- **Detect Best Practice Violations**: Identifies Flow patterns that don't follow Salesforce best practices
+- **Find Structural Issues**: Detects problems like invalid references, duplicate elements, and missing required fields
+- **Validate XML Structure**: Ensures proper XML syntax and Flow metadata structure
+- **Generate Retry Context**: Provides specific error context for intelligent retry attempts
+
+### Validation Workflow
+
+1. **Receive Flow XML**: Gets Flow XML from the Flow Builder Agent
+2. **Create Temporary File**: Saves XML to temporary file for scanner
+3. **Run Lightning Flow Scanner**: Executes `sf scanner run` with appropriate parameters
+4. **Parse Results**: Converts scanner output to structured validation response
+5. **Determine Next Action**: Decides whether to proceed to deployment or retry building
+
+### Supported Validations
+
+- API name format validation
+- Element reference integrity
+- Duplicate element detection
+- Required field validation
+- XML syntax validation
+- Flow best practices compliance
+
+## Error Handling and Retries
+
+### Validation Error Handling
+
+When the Flow Validation Agent finds errors:
+
+1. **Error Classification**: Categorizes errors by type and severity
+2. **Retry Context Generation**: Creates detailed context for the Flow Builder Agent
+3. **Specific Fix Recommendations**: Provides targeted guidance for common issues
+4. **Incremental Retry Counter**: Tracks retry attempts to prevent infinite loops
+
+### Common Error Types
+
+- **API Name Issues**: Invalid characters, spaces, or naming conventions
+- **Reference Errors**: Invalid targetReference values pointing to non-existent elements
+- **Duplicate Elements**: Multiple elements with the same name
+- **Missing Required Fields**: Flow elements missing mandatory properties
+- **XML Syntax Errors**: Malformed XML structure
+
+## Project Structure
+
+```
+src/
+├── agents/
+│   ├── authentication_agent.py
+│   ├── enhanced_flow_builder_agent.py
+│   ├── flow_validation_agent.py       # New validation agent
+│   └── deployment_agent.py
+├── tools/
+│   ├── salesforce_auth_tool.py
+│   ├── flow_scanner_tool.py           # New scanner tool
+│   └── salesforce_deployer_tool.py
+├── schemas/
+│   ├── auth_schemas.py
+│   ├── flow_builder_schemas.py
+│   ├── flow_validation_schemas.py     # New validation schemas
+│   └── deployment_schemas.py
+├── state/
+│   └── agent_workforce_state.py       # Updated with validation fields
+└── main_orchestrator.py               # Updated workflow
+```
+
+## Configuration
+
+### Retry Limits
+
+Control retry behavior via environment variables:
+
+```env
+MAX_BUILD_DEPLOY_RETRIES=3  # Maximum retry attempts for validation/deployment failures
+```
+
+### Flow Scanner Configuration
+
+```env
+FLOW_SCANNER_CLI_PATH=sf           # Path to Salesforce CLI
+FLOW_SCANNER_TIMEOUT=30            # Scanner timeout in seconds
+FLOW_SCANNER_OUTPUT_FORMAT=json    # Scanner output format
+```
+
+## Troubleshooting
+
+### Flow Scanner Issues
+
+1. **Scanner not found**: Install with `npm install -g @salesforce/sfdx-scanner`
+2. **Rules not initialized**: Run `sf scanner rule list` to download rules
+3. **Permission errors**: Ensure CLI tools are executable
+4. **Timeout errors**: Increase `FLOW_SCANNER_TIMEOUT` value
+
+### Common Problems
+
+- **Authentication failures**: Check Salesforce CLI configuration and org access
+- **Flow build errors**: Review LLM responses and increase context if needed
+- **Deployment failures**: Check org permissions and metadata API limits
+
+## Development
+
+### Adding New Validation Rules
+
+1. Create custom PMD rules for Flow-specific patterns
+2. Configure rule severity levels in the Flow Scanner tool
+3. Update error analysis logic in the Flow Validation Agent
+
+### Testing
+
+Run the test suite:
+
+```bash
+# Test Flow Validation Agent
+python tests/test_flow_validation_agent.py
+
+# Test entire workflow (requires Salesforce org)
+python src/main_orchestrator.py SANDBOX_ALIAS
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+## License
+
+[Your License Here]

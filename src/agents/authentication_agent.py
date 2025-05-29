@@ -27,7 +27,11 @@ load_dotenv(dotenv_path=dotenv_path)
 if not os.getenv("ANTHROPIC_API_KEY"):
     raise ValueError("ANTHROPIC_API_KEY not found in environment variables.")
 
-LLM = ChatAnthropic(model="claude-3-opus-20240229", temperature=0)
+LLM = ChatAnthropic(
+    model="claude-3-opus-20240229", 
+    temperature=0, 
+    max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2048"))  # Use configurable max tokens, smaller default for auth
+)
 AUTHENTICATION_TOOLS = [SalesforceAuthenticatorTool()]
 
 AUTHENTICATION_AGENT_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
