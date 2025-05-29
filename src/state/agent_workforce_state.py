@@ -16,6 +16,9 @@ class AgentWorkforceState(TypedDict, total=False):
     current_flow_build_request: Optional[Dict[str, Any]]  # Serialized FlowBuildRequest
     current_flow_build_response: Optional[Dict[str, Any]]  # Serialized FlowBuildResponse
 
+    # User requirements
+    user_story: Optional[Dict[str, Any]]  # Serialized UserStory with acceptance criteria
+
     # Deployment related state
     current_deployment_request: Optional[Dict[str, Any]]  # Serialized DeploymentRequest
     current_deployment_response: Optional[Dict[str, Any]]  # Serialized DeploymentResponse
