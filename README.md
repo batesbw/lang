@@ -17,11 +17,19 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 # Optional (for tracing)
 LANGSMITH_API_KEY=your_langsmith_api_key
+LANGCHAIN_API_KEY=your_langchain_api_key  # Alternative to LANGSMITH_API_KEY
 
-# Salesforce credentials (replace ORGALIAS with your org alias)
-SF_CONSUMER_KEY_ORGALIAS=your_consumer_key
-SF_CONSUMER_SECRET_ORGALIAS=your_consumer_secret
-SF_MY_DOMAIN_URL_ORGALIAS=https://your-domain.my.salesforce.com
+# Salesforce credentials (replace E2E_TEST_ORG with your org alias)
+SF_USERNAME_E2E_TEST_ORG=your_salesforce_username
+SF_CONSUMER_KEY_E2E_TEST_ORG=your_connected_app_consumer_key
+SF_PRIVATE_KEY_FILE_E2E_TEST_ORG=/path/to/your/private_key.pem
+SF_INSTANCE_URL_E2E_TEST_ORG=https://your-domain.my.salesforce.com
+
+# Optional (for enhanced RAG features)
+OPENAI_API_KEY=your_openai_api_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_KEY=your_supabase_service_key
+GITHUB_TOKEN=your_github_token
 ```
 
 ### Installation
@@ -64,8 +72,11 @@ python scripts/demo_enhanced_workflow.py
 # Set up Salesforce authentication first
 python scripts/setup_jwt_auth.py
 
-# Run the complete workflow
-python scripts/run_workflow.py YOUR_ORG_ALIAS
+# Run the complete workflow (will prompt for org alias)
+python scripts/run_workflow.py
+
+# Or specify org alias directly
+python scripts/run_workflow.py E2E_TEST_ORG
 ```
 
 #### **Option 4: Visualize the System**

@@ -196,6 +196,13 @@ class EnhancedFlowBuilderAgent:
             
         except Exception as e:
             logger.error(f"Error retrieving knowledge: {str(e)}")
+            # Return empty knowledge on error to allow flow generation to continue
+            knowledge = {
+                "best_practices": [],
+                "sample_flows": [],
+                "patterns": [],
+                "troubleshooting": []
+            }
         
         return knowledge
     

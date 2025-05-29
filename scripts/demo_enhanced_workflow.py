@@ -21,6 +21,38 @@ from src.state.agent_workforce_state import AgentWorkforceState
 # Load environment variables
 load_dotenv()
 
+def get_org_alias():
+    """Get org alias from user input."""
+    print("🔍 Available org configurations:")
+    print("  - E2E_TEST_ORG (recommended for testing)")
+    print("  - DEMO (for demonstration without real deployment)")
+    print("  - Or any other org alias you've configured")
+    
+    org_alias = input("\nEnter your Salesforce org alias (or press Enter for 'E2E_TEST_ORG'): ").strip().upper()
+    if not org_alias:
+        org_alias = "E2E_TEST_ORG"
+    
+    return org_alias
+
+def check_environment_variables(org_alias):
+    """Check which environment variables are available."""
+    required_vars = {
+        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+        f"SF_USERNAME_{org_alias}": os.getenv(f"SF_USERNAME_{org_alias}"),
+        f"SF_CONSUMER_KEY_{org_alias}": os.getenv(f"SF_CONSUMER_KEY_{org_alias}"),
+        f"SF_PRIVATE_KEY_FILE_{org_alias}": os.getenv(f"SF_PRIVATE_KEY_FILE_{org_alias}"),
+        f"SF_INSTANCE_URL_{org_alias}": os.getenv(f"SF_INSTANCE_URL_{org_alias}")
+    }
+    
+    optional_vars = {
+        "LANGSMITH_API_KEY": os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY"),
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+        "SUPABASE_URL": os.getenv("SUPABASE_URL"),
+        "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN")
+    }
+    
+    return required_vars, optional_vars
+
 def demo_enhanced_workflow_with_user_story():
     """
     Demo the enhanced workflow with a user story-driven flow
@@ -34,20 +66,38 @@ def demo_enhanced_workflow_with_user_story():
         print("Please set your Anthropic API key in the .env file.")
         return
     
-    # Get org alias from user or use default
-    org_alias = input("Enter your Salesforce org alias (or press Enter for 'DEMO'): ").strip()
-    if not org_alias:
-        org_alias = "DEMO"
+    # Get org alias from user
+    org_alias = get_org_alias()
+    
+    # Check environment variables
+    required_vars, optional_vars = check_environment_variables(org_alias)
     
     print(f"\n🎯 Running enhanced workflow for org: {org_alias}")
-    print("This will demonstrate the enhanced FlowBuilderAgent capabilities:")
+    
+    # Show configuration status
+    print("\n📋 Configuration Status:")
+    missing_required = [var for var, value in required_vars.items() if not value]
+    
+    if missing_required:
+        print("⚠️  Missing required variables:")
+        for var in missing_required:
+            print(f"   ❌ {var}")
+        print("\n💡 Demo will run in mock mode for missing Salesforce credentials")
+    else:
+        print("✅ All required variables configured")
+    
+    # Show optional status
+    available_optional = [var for var, value in optional_vars.items() if value]
+    if available_optional:
+        print("🔧 Optional features available:")
+        for var in available_optional:
+            print(f"   ✅ {var}")
+    
+    print("\nThis will demonstrate the enhanced FlowBuilderAgent capabilities:")
     print("  • Natural language user story processing")
     print("  • RAG-powered best practices integration")
     print("  • Advanced XML generation")
-    print("  • Automated deployment")
-    
-    # Note: The enhanced agent will be used automatically since we updated the import
-    # in main_orchestrator.py to use enhanced_flow_builder_agent
+    print("  • Automated deployment (if credentials available)")
     
     try:
         # Run the workflow

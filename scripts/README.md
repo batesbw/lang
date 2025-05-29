@@ -9,26 +9,37 @@ This directory contains all the executable scripts for the Salesforce Agent Work
 **Requirements**: Full Salesforce credentials configured in `.env`
 **Usage**:
 ```bash
-python scripts/run_workflow.py YOUR_ORG_ALIAS
+python scripts/run_workflow.py [E2E_TEST_ORG]
 ```
 **What it does**:
-- Authenticates to Salesforce
+- Prompts for org alias if not provided (defaults to E2E_TEST_ORG)
+- Authenticates to Salesforce using JWT
 - Generates a Flow using Enhanced FlowBuilderAgent
 - Deploys the Flow to your Salesforce org
 - Reports success/failure with detailed feedback
 
+**Required Environment Variables**:
+```bash
+ANTHROPIC_API_KEY=your_anthropic_api_key
+SF_USERNAME_E2E_TEST_ORG=your_salesforce_username
+SF_CONSUMER_KEY_E2E_TEST_ORG=your_connected_app_consumer_key
+SF_PRIVATE_KEY_FILE_E2E_TEST_ORG=/path/to/your/private_key.pem
+SF_INSTANCE_URL_E2E_TEST_ORG=https://your-domain.my.salesforce.com
+```
+
 ### `demo_enhanced_workflow.py` - **Interactive Demo**
 **Purpose**: Interactive demonstration of the Enhanced FlowBuilderAgent capabilities
-**Requirements**: Anthropic API key only
+**Requirements**: Anthropic API key (Salesforce credentials optional)
 **Usage**:
 ```bash
 python scripts/demo_enhanced_workflow.py
 ```
 **What it does**:
-- Shows enhanced workflow capabilities
-- Allows custom user story creation
-- Demonstrates natural language processing
-- Works without real Salesforce credentials
+- Prompts for org alias (defaults to E2E_TEST_ORG)
+- Shows configuration status for all environment variables
+- Demonstrates enhanced workflow capabilities
+- Works in mock mode if Salesforce credentials are missing
+- Shows natural language processing and RAG features
 
 ## 🧪 Testing & Validation Scripts
 
@@ -126,21 +137,6 @@ python scripts/debug_jwt_auth.py
 - Validates certificates
 - Checks Salesforce connectivity
 - Provides detailed error diagnostics
-
-## 📚 Example Scripts
-
-### `weather_agent_example.py` - **LangChain Agent Example**
-**Purpose**: Simple example of how to build a LangChain agent (not Salesforce-related)
-**Requirements**: Anthropic API key, OpenWeather API key
-**Usage**:
-```bash
-python scripts/weather_agent_example.py
-```
-**What it does**:
-- Demonstrates basic LangChain agent patterns
-- Shows tool integration
-- Provides interactive chat interface
-- Educational reference for agent development
 
 ## 🚦 Quick Start Guide
 

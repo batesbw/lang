@@ -6,10 +6,10 @@ This script provides an easy way to run the linear workflow:
 START -> AuthenticationAgent -> FlowBuilderAgent -> DeploymentAgent -> END
 
 Usage:
-    python scripts/run_workflow.py <org_alias>
+    python scripts/run_workflow.py [org_alias]
     
 Example:
-    python scripts/run_workflow.py MYSANDBOX
+    python scripts/run_workflow.py E2E_TEST_ORG
 """
 
 import sys
@@ -23,33 +23,31 @@ sys.path.insert(0, str(src_path))
 from src.main_orchestrator import run_workflow
 
 
-def main():
-    """Main CLI entry point."""
-    print("🤖 Salesforce Agent Workforce - Linear Workflow")
-    print("=" * 50)
+def get_org_alias():
+    """Get org alias from command line or user input."""
+    if len(sys.argv) >= 2:
+        return sys.argv[1].upper()
     
-    if len(sys.argv) < 2:
-        print("❌ Error: Org alias is required")
-        print("\nUsage:")
-        print("  python scripts/run_workflow.py <org_alias>")
-        print("\nExample:")
-        print("  python scripts/run_workflow.py MYSANDBOX")
-        print("\nMake sure you have the following environment variables set:")
-        print("  - ANTHROPIC_API_KEY")
-        print("  - LANGSMITH_API_KEY (optional, for tracing)")
-        print("  - SF_CONSUMER_KEY_<ORG_ALIAS>")
-        print("  - SF_CONSUMER_SECRET_<ORG_ALIAS>")
-        print("  - SF_MY_DOMAIN_URL_<ORG_ALIAS>")
-        sys.exit(1)
+    print("🔍 Available org configurations:")
+    print("  - E2E_TEST_ORG (recommended for testing)")
+    print("  - Or any other org alias you've configured")
     
-    org_alias = sys.argv[1].upper()
-    
-    # Validate required environment variables
+    while True:
+        org_alias = input("\nEnter your Salesforce org alias: ").strip().upper()
+        if org_alias:
+            return org_alias
+        print("❌ Org alias cannot be empty. Please try again.")
+
+
+def validate_environment_variables(org_alias):
+    """Validate that all required environment variables are set."""
+    # Required environment variables for the specified org
     required_env_vars = [
         "ANTHROPIC_API_KEY",
+        f"SF_USERNAME_{org_alias}",
         f"SF_CONSUMER_KEY_{org_alias}",
-        f"SF_CONSUMER_SECRET_{org_alias}",
-        f"SF_MY_DOMAIN_URL_{org_alias}"
+        f"SF_PRIVATE_KEY_FILE_{org_alias}",
+        f"SF_INSTANCE_URL_{org_alias}"
     ]
     
     missing_vars = []
@@ -57,21 +55,45 @@ def main():
         if not os.getenv(var):
             missing_vars.append(var)
     
+    return missing_vars
+
+
+def main():
+    """Main CLI entry point."""
+    print("🤖 Salesforce Agent Workforce - Linear Workflow")
+    print("=" * 50)
+    
+    # Get org alias
+    org_alias = get_org_alias()
+    
+    # Validate required environment variables
+    missing_vars = validate_environment_variables(org_alias)
+    
     if missing_vars:
-        print("❌ Error: Missing required environment variables:")
+        print(f"❌ Error: Missing required environment variables for org '{org_alias}':")
         for var in missing_vars:
             print(f"  - {var}")
-        print("\nPlease set these variables in your .env file or environment.")
+        print("\nPlease set these variables in your .env file:")
+        print(f"  SF_USERNAME_{org_alias}=your_salesforce_username")
+        print(f"  SF_CONSUMER_KEY_{org_alias}=your_connected_app_consumer_key")
+        print(f"  SF_PRIVATE_KEY_FILE_{org_alias}=/path/to/your/private_key.pem")
+        print(f"  SF_INSTANCE_URL_{org_alias}=https://your-domain.my.salesforce.com")
+        print("  ANTHROPIC_API_KEY=your_anthropic_api_key")
         sys.exit(1)
     
     print(f"🎯 Target Org: {org_alias}")
     print(f"🔑 Using credentials for: {org_alias}")
     
-    # Optional: Show LangSmith status
-    if os.getenv("LANGSMITH_API_KEY"):
+    # Show optional configurations
+    if os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY"):
         print("📊 LangSmith tracing: ENABLED")
     else:
         print("📊 LangSmith tracing: DISABLED (LANGSMITH_API_KEY not set)")
+    
+    if os.getenv("OPENAI_API_KEY"):
+        print("🧠 OpenAI embeddings: AVAILABLE (for RAG)")
+    else:
+        print("🧠 OpenAI embeddings: NOT CONFIGURED (RAG features limited)")
     
     print("\n🚀 Starting workflow execution...")
     print("-" * 50)
