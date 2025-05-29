@@ -49,7 +49,7 @@ The Salesforce Agent Workforce now supports user stories and acceptance criteria
 ```json
 {
   "current_auth_request": {
-    "org_alias": "your-org-alias"
+    "org_alias": "E2E_TEST_ORG"
   },
   "user_story": {
     "title": "Automate Lead Assignment",
