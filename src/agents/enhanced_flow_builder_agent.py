@@ -7,6 +7,7 @@ This agent leverages RAG (Retrieval-Augmented Generation) to build better Salesf
 3. Using retrieved context to generate more accurate and robust flows
 4. Learning from documented solutions and common patterns
 5. Learning from deployment failures and applying fixes
+6. Maintaining conversational memory across retry attempts
 """
 
 import logging
@@ -14,6 +15,8 @@ from typing import Optional, List, Dict, Any
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain.memory import ConversationSummaryBufferMemory
+from langchain.memory.chat_message_histories import ChatMessageHistory
 
 from ..tools.rag_tools import RAG_TOOLS, search_flow_knowledge_base, find_similar_sample_flows
 from ..tools.flow_builder_tools import BasicFlowXmlGeneratorTool
@@ -23,17 +26,32 @@ from ..state.agent_workforce_state import AgentWorkforceState
 logger = logging.getLogger(__name__)
 
 class EnhancedFlowBuilderAgent:
-    """Enhanced Flow Builder Agent with RAG capabilities and failure learning"""
+    """Enhanced Flow Builder Agent with RAG capabilities, failure learning, and conversational memory"""
     
     def __init__(self, llm: BaseLanguageModel):
         self.llm = llm
         self.xml_generator = BasicFlowXmlGeneratorTool()
         
+        # Initialize conversational memory for retry attempts
+        self.memory = ConversationSummaryBufferMemory(
+            llm=llm,
+            max_token_limit=4000,  # Sufficient for flow building context
+            memory_key="conversation_history",
+            input_key="input",
+            output_key="output",
+            return_messages=True,
+            moving_summary_buffer="Previous flow building attempts and decisions",
+            chat_memory=ChatMessageHistory()
+        )
+        
+        # Memory storage for different flow sessions
+        self._flow_memories: Dict[str, ConversationSummaryBufferMemory] = {}
+        
         # System prompt for the enhanced agent
         self.system_prompt = """
         You are an expert Salesforce Flow Builder Agent with access to a comprehensive knowledge base, 
-        sample flow repository, and deployment failure learning system. Your role is to create high-quality, 
-        production-ready Salesforce flows based on user requirements and learn from past failures.
+        sample flow repository, deployment failure learning system, and conversational memory. Your role is to create high-quality, 
+        production-ready Salesforce flows based on user requirements and learn from past attempts.
         
         Your capabilities include:
         1. Searching the knowledge base for best practices, patterns, and troubleshooting guides
@@ -43,23 +61,28 @@ class EnhancedFlowBuilderAgent:
         5. Generating robust, well-structured flow XML
         6. Providing recommendations and explanations for design choices
         7. Adapting flows based on failure patterns and successful resolutions
+        8. Maintaining memory of previous attempts to improve iterative flow building
         
         When building flows, always:
         - Start by understanding the business requirements thoroughly
         - Check for similar past failures and their resolutions
+        - Review your previous attempts and reasoning if this is a retry
         - Search for relevant best practices and patterns
         - Look for similar sample flows for reference
         - Apply Salesforce flow best practices (performance, error handling, etc.)
         - Generate clean, maintainable flow XML with failure prevention in mind
         - Provide clear explanations for your design decisions
         - Learn from any deployment failures to improve future flows
+        - Build upon previous attempts when retrying, avoiding repeated mistakes
         
         When fixing deployment failures:
         - Analyze the error message and categorize the failure type
         - Look for similar past failures and successful fixes
+        - Review what you tried before and why it might have failed
         - Apply proven solutions from the failure memory
         - Document the attempted fix for future learning
-        - Focus on the most likely root cause based on historical data
+        - Focus on the most likely root cause based on historical data and previous attempts
+        - Avoid repeating the same approach that failed before
         
         Focus on creating flows that are:
         - Performant and scalable
@@ -67,7 +90,118 @@ class EnhancedFlowBuilderAgent:
         - Well-documented and maintainable
         - Following Salesforce best practices
         - Avoiding known failure patterns
+        - Incorporating lessons learned from previous attempts
         """
+    
+    def _get_flow_memory(self, flow_api_name: str) -> ConversationSummaryBufferMemory:
+        """Get or create memory for a specific flow"""
+        if flow_api_name not in self._flow_memories:
+            self._flow_memories[flow_api_name] = ConversationSummaryBufferMemory(
+                llm=self.llm,
+                max_token_limit=4000,
+                memory_key="conversation_history",
+                input_key="input",
+                output_key="output",
+                return_messages=True,
+                moving_summary_buffer=f"Flow building attempts for {flow_api_name}",
+                chat_memory=ChatMessageHistory()
+            )
+        return self._flow_memories[flow_api_name]
+    
+    def _save_attempt_to_memory(self, flow_api_name: str, request: FlowBuildRequest, 
+                               response: FlowBuildResponse, attempt_number: int = 1) -> None:
+        """Save a flow building attempt to memory"""
+        memory = self._get_flow_memory(flow_api_name)
+        
+        # Create input context
+        input_context = f"""
+        Flow Building Attempt #{attempt_number}
+        
+        Request Details:
+        - Flow Name: {request.flow_api_name}
+        - Description: {request.flow_description}
+        - User Story: {request.user_story.title if request.user_story else 'None'}
+        - Acceptance Criteria: {request.user_story.acceptance_criteria if request.user_story else 'None'}
+        
+        Retry Context: {request.retry_context if request.retry_context else 'Initial attempt'}
+        """
+        
+        # Create output context
+        if response.success:
+            output_context = f"""
+            SUCCESS - Flow building completed successfully
+            
+            Response Details:
+            - Flow XML generated successfully
+            - Elements created: {response.elements_created}
+            - Variables created: {response.variables_created}
+            - Best practices applied: {response.best_practices_applied}
+            - Recommendations: {response.recommendations}
+            - Deployment notes: {response.deployment_notes}
+            
+            Key Design Decisions:
+            - Followed {len(response.best_practices_applied)} best practices
+            - Generated {len(response.elements_created)} flow elements
+            - Applied {len(response.recommendations)} recommendations
+            """
+        else:
+            output_context = f"""
+            FAILURE - Flow building failed
+            
+            Error Details:
+            - Error message: {response.error_message}
+            - Validation errors: {response.validation_errors}
+            
+            This attempt failed and should be learned from in future retries.
+            """
+        
+        # Save to memory
+        try:
+            memory.save_context(
+                {"input": input_context},
+                {"output": output_context}
+            )
+            logger.info(f"Saved attempt #{attempt_number} to memory for flow: {flow_api_name}")
+        except Exception as e:
+            logger.warning(f"Failed to save attempt to memory: {str(e)}")
+    
+    def _get_memory_context(self, flow_api_name: str) -> str:
+        """Get conversation history from memory for context"""
+        memory = self._get_flow_memory(flow_api_name)
+        
+        try:
+            memory_vars = memory.load_memory_variables({})
+            conversation_history = memory_vars.get("conversation_history", "")
+            
+            if conversation_history:
+                if isinstance(conversation_history, list):
+                    # Convert message list to string
+                    history_text = "\n".join([
+                        f"{msg.type.title()}: {msg.content}" 
+                        for msg in conversation_history
+                    ])
+                else:
+                    history_text = str(conversation_history)
+                
+                return f"""
+                Previous Flow Building Attempts and Context:
+                
+                {history_text}
+                
+                Use this context to understand what has been tried before and build upon previous attempts.
+                Avoid repeating approaches that failed and incorporate successful patterns.
+                """
+            else:
+                return "No previous attempts found for this flow."
+        except Exception as e:
+            logger.warning(f"Failed to load memory context: {str(e)}")
+            return "Unable to load previous attempt context."
+    
+    def clear_flow_memory(self, flow_api_name: str) -> None:
+        """Clear memory for a specific flow (useful for starting fresh)"""
+        if flow_api_name in self._flow_memories:
+            self._flow_memories[flow_api_name].clear()
+            logger.info(f"Cleared memory for flow: {flow_api_name}")
     
     def analyze_requirements(self, request: FlowBuildRequest) -> Dict[str, Any]:
         """Analyze the flow requirements and extract key information for RAG search"""
@@ -225,7 +359,7 @@ class EnhancedFlowBuilderAgent:
         return knowledge
     
     def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any]) -> str:
-        """Generate a unified prompt with user story, RAG knowledge, and optional retry context"""
+        """Generate a unified prompt with user story, RAG knowledge, memory context, and optional retry context"""
         
         prompt_parts = [
             f"Create a Salesforce flow based on the following requirements:",
@@ -234,6 +368,15 @@ class EnhancedFlowBuilderAgent:
             f"Description: {request.flow_description}",
             ""
         ]
+        
+        # Add memory context from previous attempts
+        memory_context = self._get_memory_context(request.flow_api_name)
+        if memory_context and "No previous attempts found" not in memory_context:
+            prompt_parts.extend([
+                "CONVERSATION MEMORY - PREVIOUS ATTEMPTS:",
+                memory_context,
+                ""
+            ])
         
         # Add comprehensive user story context if available
         if request.user_story:
@@ -303,14 +446,14 @@ class EnhancedFlowBuilderAgent:
             
             if deployment_error or original_flow_xml:
                 prompt_parts.extend([
-                    f"PREVIOUS ATTEMPT CONTEXT (Retry #{retry_attempt}):",
+                    f"CURRENT RETRY CONTEXT (Retry #{retry_attempt}):",
                     "The previous flow deployment failed and needs to be rebuilt.",
                     ""
                 ])
                 
                 if deployment_error:
                     prompt_parts.extend([
-                        "Previous deployment error:",
+                        "Current deployment error:",
                         f"{deployment_error}",
                         ""
                     ])
@@ -336,13 +479,15 @@ class EnhancedFlowBuilderAgent:
                     "1. You MUST fulfill ALL the original business requirements and user story",
                     "2. You MUST address the deployment error that caused the failure",
                     "3. You MUST maintain the flow's intended functionality and business logic",
-                    "4. Common deployment fixes to apply:",
+                    "4. Build upon insights from previous attempts (shown in conversation memory above)",
+                    "5. Avoid repeating approaches that failed before",
+                    "6. Common deployment fixes to apply:",
                     "   - API names must be alphanumeric and start with a letter (no spaces, hyphens, or special characters)",
                     "   - All required elements and configurations must be present",
                     "   - Element references must be valid",
                     "   - Flow syntax and structure must be correct",
                     "",
-                    "APPROACH: Start with the business requirements, design a flow that meets them, and apply deployment error fixes as you build.",
+                    "APPROACH: Review previous attempts in memory, understand what worked/failed, start with the business requirements, design a flow that meets them, and apply deployment error fixes as you build.",
                     ""
                 ])
         
@@ -354,6 +499,7 @@ class EnhancedFlowBuilderAgent:
             "4. Use descriptive names for all flow elements",
             "5. Ensure the flow is scalable and follows governor limit best practices",
             "6. Include comments explaining key design decisions",
+            "7. If this is a retry, incorporate lessons learned from previous attempts",
             "",
             "Please provide the flow XML and a brief explanation of your design choices."
         ])
@@ -362,6 +508,9 @@ class EnhancedFlowBuilderAgent:
     
     def generate_flow_with_rag(self, request: FlowBuildRequest) -> FlowBuildResponse:
         """Generate a flow using unified RAG-enhanced approach for both initial and retry attempts"""
+        
+        # Determine attempt number for memory tracking
+        retry_attempt = request.retry_context.get('retry_attempt', 1) if request.retry_context else 1
         
         try:
             # Step 1: Analyze requirements
@@ -372,8 +521,8 @@ class EnhancedFlowBuilderAgent:
             logger.info("Retrieving relevant knowledge from RAG sources")
             knowledge = self.retrieve_knowledge(analysis)
             
-            # Step 3: Generate unified prompt (includes user story, RAG knowledge, and optional retry context)
-            logger.info("Generating unified enhanced prompt")
+            # Step 3: Generate unified prompt (includes user story, RAG knowledge, memory context, and optional retry context)
+            logger.info("Generating unified enhanced prompt with memory context")
             enhanced_prompt = self.generate_enhanced_prompt(request, knowledge)
             
             # Step 4: Use LLM to generate flow design
@@ -416,9 +565,9 @@ class EnhancedFlowBuilderAgent:
                 
                 # Add retry-specific context if applicable
                 if request.retry_context:
-                    retry_attempt = request.retry_context.get('retry_attempt', 1)
                     enhanced_recommendations.append(f"Generated addressing deployment failures (retry #{retry_attempt})")
                     enhanced_best_practices.append("Incorporated deployment error resolution strategies")
+                    enhanced_best_practices.append("Built upon previous attempt insights from memory")
                 
                 # Create enhanced response with valid fields only
                 enhanced_response = FlowBuildResponse(
@@ -436,6 +585,9 @@ class EnhancedFlowBuilderAgent:
                     dependencies=basic_response.dependencies
                 )
                 
+                # Save successful attempt to memory
+                self._save_attempt_to_memory(request.flow_api_name, request, enhanced_response, retry_attempt)
+                
                 logger.info(f"Successfully generated enhanced flow: {request.flow_api_name}")
                 return enhanced_response
             else:
@@ -445,11 +597,16 @@ class EnhancedFlowBuilderAgent:
             error_message = f"Enhanced FlowBuilderAgent error: {str(e)}"
             logger.error(error_message)
             
-            return FlowBuildResponse(
+            error_response = FlowBuildResponse(
                 success=False,
                 input_request=request,
                 error_message=error_message
             )
+            
+            # Save failed attempt to memory
+            self._save_attempt_to_memory(request.flow_api_name, request, error_response, retry_attempt)
+            
+            return error_response
 
     def analyze_deployment_failure(self, error_message: str, flow_xml: str, component_errors: Optional[List[str]] = None) -> Dict[str, Any]:
         """Analyze a deployment failure and learn from it - REMOVED for simplification"""
@@ -474,9 +631,9 @@ class EnhancedFlowBuilderAgent:
 
 def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> AgentWorkforceState:
     """
-    Run the Enhanced Flow Builder Agent with unified RAG approach for all attempts
+    Run the Enhanced Flow Builder Agent with unified RAG approach and conversational memory
     """
-    print("----- ENHANCED FLOW BUILDER AGENT (with Unified RAG Approach) -----")
+    print("----- ENHANCED FLOW BUILDER AGENT (with Unified RAG + Memory) -----")
     
     flow_build_request_dict = state.get("current_flow_build_request")
     build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
@@ -495,16 +652,28 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
             if flow_build_request.retry_context:
                 retry_attempt = flow_build_request.retry_context.get('retry_attempt', 1)
                 print(f"🔄 RETRY MODE: Processing attempt #{retry_attempt}")
+                print(f"🧠 MEMORY: Will include context from previous attempts")
                 print(f"🔧 Will rebuild flow addressing previous deployment failure")
-                print(f"🎯 Using unified RAG approach with integrated failure context")
+                print(f"🎯 Using unified RAG approach with integrated failure context and memory")
             else:
                 print("📝 INITIAL ATTEMPT: Using unified RAG approach")
+                print("🧠 MEMORY: Starting fresh memory tracking for this flow")
             
-            # Initialize the enhanced agent
+            # Initialize the enhanced agent with persistent memory
+            # Note: In a production system, you'd want to persist this agent instance
+            # across calls to maintain memory. For now, we create it fresh each time
+            # but the memory will be saved within the agent's _flow_memories dict
             agent = EnhancedFlowBuilderAgent(llm)
             
+            # Check if we have memory context for this flow
+            memory_context = agent._get_memory_context(flow_build_request.flow_api_name)
+            if memory_context and "No previous attempts found" not in memory_context:
+                print("🧠 MEMORY: Found previous attempt context")
+            else:
+                print("🧠 MEMORY: No previous attempts found for this flow")
+            
             # Use the unified RAG approach for all scenarios
-            # The method automatically handles user story, RAG knowledge, and optional retry context
+            # The method automatically handles user story, RAG knowledge, memory context, and optional retry context
             flow_response = agent.generate_flow_with_rag(flow_build_request)
             
             # Convert response to dict for state storage
@@ -512,14 +681,17 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
             
             if flow_response.success:
                 print(f"✅ Flow building successful for: {flow_build_request.flow_api_name}")
+                print(f"🧠 MEMORY: Saved successful attempt to memory")
                 if flow_build_request.retry_context:
                     retry_attempt = flow_build_request.retry_context.get('retry_attempt', 1)
                     print(f"   🎯 Successfully rebuilt flow addressing deployment issues (retry #{retry_attempt})")
                     print(f"   🔄 Maintained business requirements while fixing deployment errors")
+                    print(f"   🧠 Incorporated insights from previous attempts")
                 else:
                     print(f"   📋 Successfully built flow meeting user story requirements")
             else:
                 print(f"❌ Flow building failed: {flow_response.error_message}")
+                print(f"🧠 MEMORY: Saved failed attempt to memory for future learning")
                 
         except Exception as e:
             error_message = f"Enhanced FlowBuilderAgent error: {str(e)}"

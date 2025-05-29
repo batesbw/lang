@@ -220,6 +220,28 @@
 
 ---
 
+## Current Enhancements (In Progress)
+
+### FlowBuilder Agent Memory & Error Research Enhancement
+
+#### Task E.1.1: Implement Conversational Memory for Flow Building Retries
+**Priority**: High | **Estimated Time**: 4-6 hours
+- [X] Integrate LangChain's memory system to maintain context across retry attempts
+- [X] Use ConversationSummaryBufferMemory to preserve key decisions and reasoning from previous attempts
+- [X] Ensure memory includes previous Flow designs, LLM reasoning, and error context
+- [X] Configure memory to reset appropriately between different user stories/flows
+- [X] Integrate memory into the Enhanced Flow Builder Agent's prompt generation
+
+#### Task E.1.2: Web Search Tool for Deployment Error Analysis 
+**Priority**: Medium | **Estimated Time**: 3-4 hours
+- [ ] Implement web search functionality to research deployment errors when encountered
+- [ ] Create tool to search for Salesforce documentation, community posts, and solutions
+- [ ] Integrate search results into FlowBuilder Agent's error analysis process  
+- [ ] Use search results to inform better Flow XML generation on retry attempts
+- [ ] Configure search to focus on Salesforce-specific error patterns and solutions
+
+---
+
 ## Phase 4: Workforce Expansion & Optimization (High-Level)
 
 ### Task 4.1: Introduce New Specialized Agents (Examples)

@@ -1,231 +1,140 @@
-# Unified Build/Deploy Mechanism
+# Enhanced Build/Deploy Mechanism with Conversational Memory
 
-This document describes the unified build/deploy mechanism for the Salesforce Agent Workforce.
+This document describes the enhanced build/deploy mechanism with conversational memory for the Salesforce Agent Workforce.
 
 ## 🎯 Overview
 
-The unified workflow uses a single approach for all attempts:
+The enhanced workflow now includes conversational memory to maintain context across retry attempts:
 
 1. **Single Flow Generation Method**: One method handles both initial attempts and retries
-2. **Unified Input Processing**: User story, RAG knowledge, and optional retry context are processed together
-3. **Contextual Prompt Generation**: The same prompt includes all available context (business requirements + optional failure context)
-4. **No Special Retry Logic**: The system doesn't distinguish between "normal" and "retry" - it just includes whatever context is available
-5. **Automatic Retry Loop**: When deployment fails, the system automatically retries with failure context added
+2. **Unified Input Processing**: User story, RAG knowledge, memory context, and optional retry context are processed together
+3. **Conversational Memory**: LangChain's ConversationSummaryBufferMemory maintains context across attempts
+4. **Memory-Enhanced Prompts**: The system includes previous attempt insights in the generation prompt
+5. **Contextual Learning**: Each attempt learns from previous successes and failures
+6. **Automatic Retry Loop**: When deployment fails, the system automatically retries with memory context
+
+## 🧠 Conversational Memory System
+
+### Memory Features
+
+- **Per-Flow Memory**: Each flow has its own memory context to avoid cross-contamination
+- **Summary Buffer Memory**: Uses LangChain's ConversationSummaryBufferMemory with 4000 token limit
+- **Attempt Tracking**: Saves both successful and failed attempts for future learning
+- **Context Preservation**: Maintains user story, design decisions, and error patterns
+- **Automatic Pruning**: Summarizes old conversations when token limit is reached
+
+### Memory Content
+
+Each attempt saves:
+- **Request Details**: Flow name, description, user story, acceptance criteria
+- **Attempt Context**: Whether initial or retry, retry number, previous errors
+- **Response Details**: Success/failure, design decisions, best practices applied
+- **Learning Context**: What worked, what failed, and why
+
+### Memory Integration
+
+The memory system integrates with:
+1. **Prompt Generation**: Previous attempts are included in the LLM prompt
+2. **RAG Enhancement**: Memory context complements RAG knowledge
+3. **Error Resolution**: Failed attempts inform better retry strategies
+4. **Design Decisions**: Successful patterns are reinforced in future attempts
+
+## 🔄 Enhanced Retry Workflow
+
+```
+User Story Input
+     ↓
+Initial Generation (No Memory)
+     ↓
+Save Attempt to Memory
+     ↓
+Deploy Flow
+     ↓
+[If Deployment Fails]
+     ↓
+Load Memory Context
+     ↓
+Enhanced Retry Generation (with Memory + RAG + Error Context)
+     ↓
+Save Retry Attempt to Memory
+     ↓
+Deploy Flow
+     ↓
+[Repeat until Success or Max Retries]
+```
+
+## 📊 Memory Benefits
+
+### For Initial Attempts
+- Clean slate approach with no previous context
+- Establishes baseline attempt for future learning
+- Saves design rationale for potential retries
+
+### For Retry Attempts
+- **Contextual Awareness**: Understands what was tried before
+- **Pattern Recognition**: Identifies repeated failure patterns
+- **Iterative Improvement**: Builds upon previous insights
+- **Mistake Avoidance**: Prevents repeating failed approaches
+
+## 🛠 Implementation Details
+
+### Memory Architecture
+```python
+class EnhancedFlowBuilderAgent:
+    def __init__(self, llm):
+        # Per-flow memory storage
+        self._flow_memories: Dict[str, ConversationSummaryBufferMemory]
+        
+        # Memory configuration
+        self.memory = ConversationSummaryBufferMemory(
+            llm=llm,
+            max_token_limit=4000,
+            memory_key="conversation_history",
+            return_messages=True
+        )
+```
+
+### Memory Operations
+- `_get_flow_memory()`: Get or create memory for specific flow
+- `_save_attempt_to_memory()`: Save attempt details to memory
+- `_get_memory_context()`: Retrieve previous attempt context
+- `clear_flow_memory()`: Reset memory for fresh start
+
+## 📈 Expected Improvements
+
+### Quality Enhancement
+- **Progressive Learning**: Each retry is more informed than the last
+- **Context Preservation**: Business requirements remain intact across retries
+- **Error Pattern Recognition**: Common failures are identified and avoided
+
+### Efficiency Gains
+- **Faster Resolution**: Previous insights accelerate problem-solving
+- **Reduced Repetition**: Avoids trying the same failed approach multiple times
+- **Better Error Handling**: Memory informs more targeted error resolution
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Memory Settings
+- **Token Limit**: 4000 tokens per flow (configurable)
+- **Memory Type**: ConversationSummaryBufferMemory
+- **Persistence**: In-memory per agent instance
+- **Pruning**: Automatic when token limit exceeded
 
-Add these to your `.env` file:
+### Usage Guidelines
+- Memory automatically activates for retry attempts
+- No manual intervention required
+- Memory persists for the duration of the agent session
+- Can be cleared manually if needed for testing
 
-```bash
-# Maximum number of build/deploy retry attempts when deployment fails
-MAX_BUILD_DEPLOY_RETRIES=3
-```
+## 🚀 Future Enhancements
 
-### Default Values
+### Phase 2 Improvements
+- **Persistent Memory Storage**: Save memory to database for cross-session persistence
+- **Memory Sharing**: Allow similar flows to benefit from each other's learning
+- **Memory Analytics**: Track memory effectiveness and optimization opportunities
+- **Custom Memory Strategies**: Different memory patterns for different flow types
 
-- `MAX_BUILD_DEPLOY_RETRIES`: 3 (if not set)
-
-## 🔄 How It Works
-
-### 1. Initial Build/Deploy Attempt
-
-1. Authentication → Unified Flow Builder → Deployment
-2. If deployment succeeds → Workflow complete ✅
-3. If deployment fails → Start retry process 🔄
-
-### 2. Unified Flow Generation Process
-
-**Every attempt uses the same method with different inputs:**
-
-**Always Included:**
-- Flow name, label, description
-- User story (title, description, acceptance criteria)
-- Business context, priority, affected objects
-- RAG knowledge (best practices, sample flows, patterns)
-- Standard flow generation requirements
-
-**Conditionally Included (only if provided):**
-- Previous Flow XML (for retry context)
-- Deployment error details (for retry context)
-- Component-level errors (for retry context)
-
-### 3. Retry Process
-
-When a deployment fails:
-
-1. **Error Extraction**: The system extracts deployment error and component errors
-2. **Context Addition**: Previous flow XML and error details are added to the original request
-3. **Unified Generation**: The same flow generation method is called with the enhanced context
-4. **Smart Rebuild**: LLM uses business requirements + failure context to rebuild properly
-5. **Deployment Attempt**: The rebuilt flow is deployed
-6. **Success or Retry**: If successful, workflow ends; if failed, retry up to the maximum limit
-
-### 4. Request Structure
-
-**Initial Request:**
-```python
-FlowBuildRequest(
-    flow_api_name="MyFlow",
-    flow_label="My Flow",
-    flow_description="Flow description",
-    user_story=UserStory(...),  # Always included
-    retry_context=None          # Not present
-)
-```
-
-**Retry Request:**
-```python
-FlowBuildRequest(
-    flow_api_name="MyFlow",
-    flow_label="My Flow", 
-    flow_description="Flow description",
-    user_story=UserStory(...),  # Same user story
-    retry_context={             # Added for retry
-        "retry_attempt": 1,
-        "deployment_error": "Error message",
-        "component_errors": [...],
-        "original_flow_xml": "..."
-    }
-)
-```
-
-## 📊 Workflow Graph
-
-```
-START → Auth → Unified Flow Builder → Deployment
-                      ↑                    ↓ (if failed)
-                      └── Add Failure Context ←┘
-                           ↓ (retry)
-                      Deployment → Success/Max Retries
-```
-
-## 🛠️ Key Benefits
-
-### Unified Approach (✅ IMPLEMENTED):
-- ✅ **Single Method**: One flow generation method for all scenarios
-- ✅ **Consistent Quality**: Same sophisticated approach regardless of attempt number
-- ✅ **Complete Context**: User story always preserved, failure context added when available
-- ✅ **Clean Architecture**: No special case logic or separate retry methods
-- ✅ **LLM Intelligence**: Let the LLM naturally handle both business requirements and technical fixes
-- ✅ **Maintainable Code**: Single code path is easier to understand and maintain
-
-### Previous Complex Approach (❌ FIXED):
-- ❌ Separate methods for initial vs retry attempts
-- ❌ Risk of losing business context during retries
-- ❌ Complex conditional logic for retry handling
-- ❌ Inconsistent quality between initial and retry flows
-
-## 🚀 Implementation Details
-
-### Single Flow Generation Method
-
-```python
-def generate_flow_with_rag(self, request: FlowBuildRequest) -> FlowBuildResponse:
-    # Same method for all attempts
-    # Automatically includes user story, RAG knowledge, and optional retry context
-```
-
-### Unified Prompt Structure
-
-```
-Create a Salesforce flow based on the following requirements:
-Flow Name: [name]
-Flow Label: [label]
-Description: [description]
-
-USER STORY:
-Title: [title]
-Description: [user story description]
-
-ACCEPTANCE CRITERIA:
-1. [criteria 1]
-2. [criteria 2]
-...
-
-Priority: [priority]
-Business Context: [context]
-
-RELEVANT BEST PRACTICES:
-[RAG-retrieved best practices]
-
-SIMILAR SAMPLE FLOWS FOR REFERENCE:
-[RAG-retrieved sample flows]
-
-[OPTIONAL - only if retry_context provided]
-PREVIOUS ATTEMPT CONTEXT (Retry #1):
-The previous flow deployment failed and needs to be rebuilt.
-
-Previous deployment error:
-[error message]
-
-Component-level errors:
-- [error 1]
-- [error 2]
-
-Previous flow XML (for reference only):
-[truncated XML]
-
-IMPORTANT REQUIREMENTS FOR RETRY:
-1. You MUST fulfill ALL the original business requirements and user story
-2. You MUST address the deployment error that caused the failure
-...
-
-REQUIREMENTS:
-1. Generate a complete, production-ready Salesforce flow XML
-...
-```
-
-## 🔧 Usage
-
-The unified mechanism is automatically enabled when you run the workflow:
-
-```python
-from src.main_orchestrator import run_workflow
-
-# Will automatically retry failed deployments with unified approach
-final_state = run_workflow("YOUR_ORG_ALIAS")
-```
-
-## 📝 Example Unified Flow
-
-1. **Initial Attempt**: 
-   - Input: User story + RAG knowledge
-   - Output: Sophisticated flow meeting business requirements (but with deployment error)
-
-2. **Retry Attempt**:
-   - Input: Same user story + RAG knowledge + failure context
-   - Output: Sophisticated flow meeting business requirements AND avoiding deployment error
-
-3. **Key Difference**: Only the additional failure context, everything else identical
-
-## ⚙️ Unified Generation Process
-
-### Every Attempt (Same Process):
-1. Analyze requirements from user story
-2. Retrieve RAG knowledge (best practices, samples, patterns)
-3. Build comprehensive prompt with user story details
-4. **If retry context exists**: Add failure context to the prompt
-5. Generate sophisticated flow meeting all requirements
-
-### No Special Cases:
-- ❌ No separate "retry" vs "normal" logic
-- ❌ No risk of losing business context
-- ❌ No different quality levels between attempts
-- ✅ Single, consistent, high-quality generation process
-
-## 🔍 Architecture Comparison
-
-**Before (Complex)**:
-```
-Initial: generate_flow_with_rag() → business-aligned flow
-Retry:   generate_fix_for_deployment_failure() → basic fixes only
-```
-
-**After (Unified)**:
-```
-All attempts: generate_flow_with_rag(request_with_optional_retry_context) → business-aligned flow with optional error avoidance
-```
-
-This ensures consistent quality and business alignment across all attempts while naturally incorporating deployment error fixes when needed.
+### Advanced Features
+- **Semantic Memory Search**: Find relevant patterns from other flows
+- **Memory Prioritization**: Weight recent successes higher than older attempts
+- **Memory Compression**: Advanced summarization for long attempt histories
