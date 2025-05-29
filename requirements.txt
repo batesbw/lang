@@ -15,4 +15,6 @@ supabase>=2.9.0,<3.0.0
 langchain-openai>=0.1.0,<0.2.0
 vecs==0.4.0
 pgvector>=0.1.0,<0.2.0
-PyGithub==2.1.1 
+PyGithub==2.1.1
+# AI-powered web crawling for documentation
+crawl4ai>=0.2.0 

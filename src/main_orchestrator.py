@@ -34,8 +34,10 @@ if not os.getenv("ANTHROPIC_API_KEY"):
 if not os.getenv("LANGSMITH_API_KEY"):
     print("Warning: LANGSMITH_API_KEY not found. LangSmith tracing may not work.")
 
-# Initialize LLM
-LLM = ChatAnthropic(model="claude-3-opus-20240229", temperature=0)
+# Initialize LLM with configurable model
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+LLM = ChatAnthropic(model=ANTHROPIC_MODEL, temperature=0)
+print(f"Initialized LLM with model: {ANTHROPIC_MODEL}")
 
 # Initialize LangSmith client for tracing
 try:
@@ -106,7 +108,7 @@ def should_continue_after_flow_build(state: AgentWorkforceState) -> str:
     Conditional edge function to determine if we should continue after flow building.
     """
     flow_response = state.get("current_flow_build_response")
-    if flow_response and flow_response.success:
+    if flow_response and flow_response.get("success"):
         print("Flow building successful, proceeding to Deployment.")
         return "deployment"
     else:
@@ -119,7 +121,7 @@ def should_continue_after_deployment(state: AgentWorkforceState) -> str:
     Conditional edge function to determine workflow completion after deployment.
     """
     deployment_response = state.get("current_deployment_response")
-    if deployment_response and deployment_response.success:
+    if deployment_response and deployment_response.get("success"):
         print("Deployment successful, workflow complete.")
     else:
         print("Deployment failed, workflow complete with errors.")
@@ -421,7 +423,7 @@ if __name__ == "__main__":
             sys.exit(1)
         elif not final_state.get("is_authenticated", False):
             sys.exit(1)
-        elif final_state.get("current_deployment_response") and not final_state["current_deployment_response"].success:
+        elif final_state.get("current_deployment_response") and not final_state["current_deployment_response"].get("success"):
             sys.exit(1)
         else:
             sys.exit(0)

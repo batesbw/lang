@@ -115,16 +115,16 @@ def main():
         # Check deployment status
         deployment_response = final_state.get("current_deployment_response")
         if deployment_response:
-            if deployment_response.success:
+            if deployment_response.get("success"):
                 print("\n🎉 SUCCESS: Flow deployed successfully!")
-                print(f"   Deployment ID: {deployment_response.deployment_id}")
-                print(f"   Flow Name: {deployment_response.request_id}")
+                print(f"   Deployment ID: {deployment_response.get('deployment_id')}")
+                print(f"   Flow Name: {deployment_response.get('request_id')}")
                 sys.exit(0)
             else:
                 print("\n❌ FAILED: Deployment unsuccessful")
-                print(f"   Status: {deployment_response.status}")
-                if deployment_response.error_message:
-                    print(f"   Error: {deployment_response.error_message}")
+                print(f"   Status: {deployment_response.get('status')}")
+                if deployment_response.get("error_message"):
+                    print(f"   Error: {deployment_response.get('error_message')}")
                 sys.exit(1)
         else:
             print("\n⚠️  WARNING: Workflow completed but no deployment response found")

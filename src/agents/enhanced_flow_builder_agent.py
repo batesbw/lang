@@ -158,36 +158,36 @@ class EnhancedFlowBuilderAgent:
         try:
             # Search for best practices
             for query in analysis["search_queries"]:
-                docs = search_flow_knowledge_base(
-                    query=query,
-                    category="best_practices",
-                    max_results=3
-                )
+                docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "best_practices",
+                    "max_results": 3
+                })
                 knowledge["best_practices"].extend(docs)
             
             # Search for examples and patterns
             for query in analysis["search_queries"]:
-                docs = search_flow_knowledge_base(
-                    query=query,
-                    category="examples",
-                    max_results=2
-                )
+                docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "examples",
+                    "max_results": 2
+                })
                 knowledge["patterns"].extend(docs)
             
             # Find similar sample flows
-            sample_flows = find_similar_sample_flows(
-                requirements=analysis["search_queries"][0],  # Primary query
-                use_case=analysis["primary_use_case"],
-                complexity=analysis["complexity_level"]
-            )
+            sample_flows = find_similar_sample_flows.invoke({
+                "requirements": analysis["search_queries"][0],  # Primary query
+                "use_case": analysis["primary_use_case"],
+                "complexity": analysis["complexity_level"]
+            })
             knowledge["sample_flows"] = sample_flows
             
             # Search for troubleshooting info
-            troubleshooting_docs = search_flow_knowledge_base(
-                query=f"{analysis['primary_use_case']} troubleshooting",
-                category="troubleshooting",
-                max_results=2
-            )
+            troubleshooting_docs = search_flow_knowledge_base.invoke({
+                "query": f"{analysis['primary_use_case']} troubleshooting",
+                "category": "troubleshooting",
+                "max_results": 2
+            })
             knowledge["troubleshooting"] = troubleshooting_docs
             
             logger.info(f"Retrieved knowledge: {len(knowledge['best_practices'])} best practices, "
