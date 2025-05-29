@@ -148,6 +148,9 @@ class FlowBuildRequest(BaseModel):
     run_in_system_mode: bool = Field(default=False, description="Whether to run in system mode")
     enable_bulk_processing: bool = Field(default=True, description="Enable bulk processing for record-triggered flows")
     
+    # Retry and failure learning context
+    retry_context: Optional[Dict[str, Any]] = Field(None, description="Context about retry attempts and previous failures")
+    
     # Legacy support for simple flows
     screen_api_name: Optional[str] = Field(None, description="API name for simple screen element")
     screen_label: Optional[str] = Field(None, description="Label for simple screen element")

@@ -23,7 +23,11 @@ class AgentWorkforceState(TypedDict, total=False):
     current_deployment_request: Optional[Dict[str, Any]]  # Serialized DeploymentRequest
     current_deployment_response: Optional[Dict[str, Any]]  # Serialized DeploymentResponse
     
+    # Simple Retry Management
+    build_deploy_retry_count: int  # Current retry attempt for build/deploy cycle
+    max_build_deploy_retries: int  # Maximum allowed retries from environment
+    
     # General state
     messages: Optional[List[Any]]  # For storing LangGraph message history
-    error_message: Optional[str]  # General error messages not specific to an agent's response
-    retry_count: int  # For managing retries in loops 
+    error_message: Optional[str]
+    retry_count: int  # General retry counter (legacy) 

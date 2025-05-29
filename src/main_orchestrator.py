@@ -2,7 +2,7 @@ import os
 import uuid
 import warnings
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # Suppress Pydantic v1/v2 mixing warnings from LangChain internals
 warnings.filterwarnings("ignore", message=".*Mixing V1 models and V2 models.*")
@@ -11,17 +11,17 @@ warnings.filterwarnings("ignore", message=".*Cannot generate a JsonSchema for co
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, END, START
-from langsmith import Client
+from langsmith import Client as LangSmithClient
+from langchain_core.language_models import BaseLanguageModel
 
 # Project imports
 from src.state.agent_workforce_state import AgentWorkforceState
 from src.agents.authentication_agent import run_authentication_agent
 from src.agents.enhanced_flow_builder_agent import run_enhanced_flow_builder_agent
 from src.agents.deployment_agent import run_deployment_agent
-from src.schemas.auth_schemas import AuthenticationRequest
+from src.schemas.auth_schemas import AuthenticationRequest, SalesforceAuthResponse
 from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
-from src.schemas.deployment_schemas import DeploymentRequest
-from src.schemas.auth_schemas import SalesforceAuthResponse
+from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 
 # Load environment variables
 dotenv_path = Path(__file__).resolve().parent.parent / ".env"
@@ -39,9 +39,12 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 LLM = ChatAnthropic(model=ANTHROPIC_MODEL, temperature=0)
 print(f"Initialized LLM with model: {ANTHROPIC_MODEL}")
 
+# Initialize retry configuration
+MAX_BUILD_DEPLOY_RETRIES = int(os.getenv("MAX_BUILD_DEPLOY_RETRIES", "3"))
+
 # Initialize LangSmith client for tracing
 try:
-    langsmith_client = Client()
+    langsmith_client = LangSmithClient()
     print("LangSmith client initialized successfully.")
 except Exception as e:
     print(f"Warning: Could not initialize LangSmith client: {e}")
@@ -118,14 +121,107 @@ def should_continue_after_flow_build(state: AgentWorkforceState) -> str:
 
 def should_continue_after_deployment(state: AgentWorkforceState) -> str:
     """
-    Conditional edge function to determine workflow completion after deployment.
+    Conditional edge function to determine workflow continuation after deployment.
+    Simple retry logic for failed deployments.
     """
     deployment_response = state.get("current_deployment_response")
+    build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
+    max_retries = state.get("max_build_deploy_retries", MAX_BUILD_DEPLOY_RETRIES)
+    
     if deployment_response and deployment_response.get("success"):
-        print("Deployment successful, workflow complete.")
+        print("✅ Deployment successful, workflow complete.")
+        return END
     else:
-        print("Deployment failed, workflow complete with errors.")
-    return END
+        print(f"❌ Deployment failed (attempt #{build_deploy_retry_count + 1})")
+        
+        # Check if we should retry
+        if build_deploy_retry_count < max_retries:
+            print(f"🔄 Retrying build/deploy cycle ({build_deploy_retry_count + 1}/{max_retries})")
+            return "retry_flow_build"
+        else:
+            print(f"🛑 Maximum retries ({max_retries}) reached, ending workflow")
+            return END
+
+
+def should_retry_after_failure(state: AgentWorkforceState) -> str:
+    """
+    Conditional edge function to check if we should continue with retry logic.
+    This prepares for another build attempt after a deployment failure.
+    """
+    build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
+    max_retries = state.get("max_build_deploy_retries", MAX_BUILD_DEPLOY_RETRIES)
+    
+    if build_deploy_retry_count < max_retries:
+        print(f"📝 Preparing retry #{build_deploy_retry_count + 1}")
+        return "prepare_retry_flow_request"
+    else:
+        print("🛑 Maximum retries reached in retry check")
+        return END
+
+
+def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceState:
+    """
+    Node to prepare for a retry attempt after deployment failure.
+    Simply passes the original Flow XML and failure reason to FlowBuilder.
+    """
+    print("\n=== PREPARING RETRY FLOW BUILD REQUEST ===")
+    
+    # Increment retry count
+    current_retry_count = state.get("build_deploy_retry_count", 0) + 1
+    
+    # Get the deployment failure details
+    deployment_response = state.get("current_deployment_response")
+    last_build_response_dict = state.get("current_flow_build_response")
+    
+    if last_build_response_dict and deployment_response:
+        try:
+            last_build_response = FlowBuildResponse(**last_build_response_dict)
+            original_request = last_build_response.input_request
+            
+            print(f"🔄 Setting up retry #{current_retry_count} for flow: {original_request.flow_api_name}")
+            
+            # Create retry request with simple failure context
+            retry_request = original_request.model_copy()
+            
+            # Add simple failure context for the FlowBuilder to use
+            retry_request.retry_context = {
+                "is_retry": True,
+                "retry_attempt": current_retry_count,
+                "original_flow_xml": last_build_response.flow_xml,
+                "deployment_error": deployment_response.get("error_message", "Unknown error"),
+                "component_errors": deployment_response.get("component_errors", [])
+            }
+            
+            print(f"🔧 Passing failure details to FlowBuilder:")
+            print(f"   Error: {deployment_response.get('error_message', 'Unknown error')}")
+            print(f"   Component errors: {len(deployment_response.get('component_errors', []))}")
+            
+            updated_state = state.copy()
+            updated_state["current_flow_build_request"] = retry_request.model_dump()
+            updated_state["build_deploy_retry_count"] = current_retry_count
+            
+            print(f"✅ Retry request prepared - attempt #{current_retry_count}")
+            return updated_state
+            
+        except Exception as e:
+            print(f"❌ Error preparing retry request: {str(e)}")
+            updated_state = state.copy()
+            updated_state["error_message"] = f"Failed to prepare retry: {str(e)}"
+            return updated_state
+    else:
+        print("❌ No previous build response or deployment response found for retry")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Cannot retry: no previous build/deployment response"
+        return updated_state
+
+
+def record_build_deploy_cycle(state: AgentWorkforceState) -> AgentWorkforceState:
+    """
+    Node to record the current build/deploy cycle attempt in history - REMOVED for simplification.
+    """
+    print("\n=== RECORDING BUILD/DEPLOY CYCLE - SIMPLIFIED ===")
+    # Just pass through the state without complex tracking
+    return state
 
 
 def prepare_flow_build_request(state: AgentWorkforceState) -> AgentWorkforceState:
@@ -238,7 +334,7 @@ def prepare_deployment_request(state: AgentWorkforceState) -> AgentWorkforceStat
 
 def create_workflow() -> StateGraph:
     """
-    Creates and configures the LangGraph workflow.
+    Creates and configures the LangGraph workflow with build/deploy retry capabilities.
     """
     # Create the state graph
     workflow = StateGraph(AgentWorkforceState)
@@ -249,6 +345,8 @@ def create_workflow() -> StateGraph:
     workflow.add_node("flow_builder", flow_builder_node)
     workflow.add_node("prepare_deployment_request", prepare_deployment_request)
     workflow.add_node("deployment", deployment_node)
+    workflow.add_node("record_cycle", record_build_deploy_cycle)
+    workflow.add_node("prepare_retry_flow_request", prepare_retry_flow_request)
     
     # Set entry point
     workflow.set_entry_point("authentication")
@@ -277,20 +375,28 @@ def create_workflow() -> StateGraph:
     
     workflow.add_edge("prepare_deployment_request", "deployment")
     
+    # Add edge to record cycle after deployment
+    workflow.add_edge("deployment", "record_cycle")
+    
+    # Add conditional edges for retry logic after recording the cycle
     workflow.add_conditional_edges(
-        "deployment",
+        "record_cycle",
         should_continue_after_deployment,
         {
+            "retry_flow_build": "prepare_retry_flow_request",
             END: END
         }
     )
+    
+    # Add edge from retry preparation back to flow builder
+    workflow.add_edge("prepare_retry_flow_request", "flow_builder")
     
     return workflow
 
 
 def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce") -> Dict[str, Any]:
     """
-    Runs the complete workflow for the given Salesforce org alias.
+    Runs the complete workflow for the given Salesforce org alias with retry capabilities.
     
     Args:
         org_alias: The Salesforce org alias to authenticate to
@@ -300,12 +406,13 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         Final state of the workflow
     """
     print(f"\n🚀 Starting Salesforce Agent Workforce for org: {org_alias}")
+    print(f"🔄 Retry configuration: max_retries={MAX_BUILD_DEPLOY_RETRIES}")
     print("=" * 60)
     
     # Create authentication request
     auth_request = AuthenticationRequest(org_alias=org_alias)
     
-    # Initialize the workflow state
+    # Initialize the workflow state with simple retry capabilities
     initial_state: AgentWorkforceState = {
         "current_auth_request": auth_request.model_dump(),  # Convert to dict
         "current_auth_response": None,
@@ -317,7 +424,10 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         "current_deployment_response": None,
         "messages": [],
         "error_message": None,
-        "retry_count": 0
+        "retry_count": 0,
+        # Simple retry-related fields
+        "build_deploy_retry_count": 0,
+        "max_build_deploy_retries": MAX_BUILD_DEPLOY_RETRIES
     }
     
     # Create and compile the workflow
@@ -331,17 +441,18 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
             "configurable": {
                 "thread_id": str(uuid.uuid4()),
             },
-            "tags": ["salesforce-agent-workforce", "linear-workflow"],
+            "tags": ["salesforce-agent-workforce", "retry-enabled-workflow"],
             "metadata": {
                 "org_alias": org_alias,
-                "workflow_type": "linear",
-                "version": "1.0"
+                "workflow_type": "retry_enabled",
+                "max_retries": MAX_BUILD_DEPLOY_RETRIES,
+                "version": "2.0"
             }
         }
     
     try:
         # Run the workflow
-        print("Executing workflow...")
+        print("Executing workflow with retry capabilities...")
         final_state = app.invoke(initial_state, config=config)
         
         print("\n" + "=" * 60)
@@ -360,10 +471,17 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
 
 def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     """
-    Prints a summary of the workflow execution.
+    Prints a simplified summary of the workflow execution.
     """
     print("\n📊 WORKFLOW SUMMARY:")
     print("-" * 40)
+    
+    # Simple retry information
+    build_deploy_retry_count = final_state.get("build_deploy_retry_count", 0)
+    max_retries = final_state.get("max_build_deploy_retries", 0)
+    
+    if build_deploy_retry_count > 0:
+        print(f"🔄 Retry attempts: {build_deploy_retry_count}/{max_retries}")
     
     # Authentication status
     auth_response_dict = final_state.get("current_auth_response")
@@ -408,22 +526,25 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     deployment_response_dict = final_state.get("current_deployment_response")
     if deployment_response_dict:
         try:
-            from src.schemas.deployment_schemas import DeploymentResponse
             deployment_response = DeploymentResponse(**deployment_response_dict)
             if deployment_response.success:
                 print("✅ Deployment: SUCCESS")
                 print(f"   Deployment ID: {deployment_response.deployment_id}")
                 print(f"   Status: {deployment_response.status}")
+                if build_deploy_retry_count > 0:
+                    print(f"   🎯 Succeeded after {build_deploy_retry_count} retry(ies)")
             else:
                 print("❌ Deployment: FAILED")
                 print(f"   Status: {deployment_response.status}")
                 if deployment_response.error_message:
                     print(f"   Error: {deployment_response.error_message}")
+                if build_deploy_retry_count >= max_retries:
+                    print(f"   🛑 Maximum retries ({max_retries}) exhausted")
         except Exception:
             print("❌ Deployment: FAILED (Could not parse response)")
     else:
         print("⏭️  Deployment: SKIPPED")
-    
+        
     # General errors
     if final_state.get("error_message"):
         print(f"\n⚠️  General Error: {final_state['error_message']}")

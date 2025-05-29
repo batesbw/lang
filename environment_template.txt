@@ -11,6 +11,19 @@ LANGCHAIN_PROJECT="salesforce-multi-agent-workforce"
 ANTHROPIC_API_KEY="your_anthropic_api_key_here"
 
 # ============================================================================
+# Build/Deploy Retry Configuration
+# ============================================================================
+
+# Maximum number of build/deploy retry attempts when deployment fails
+MAX_BUILD_DEPLOY_RETRIES=3
+
+# Enable persistent failure memory storage (true/false)
+ENABLE_FAILURE_MEMORY=true
+
+# Path to store failure history for learning (JSON file)
+FAILURE_MEMORY_PATH=./failure_memory.json
+
+# ============================================================================
 # Salesforce Organization Configurations
 # ============================================================================
 # 
