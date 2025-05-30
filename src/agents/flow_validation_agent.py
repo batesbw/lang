@@ -289,8 +289,9 @@ def run_flow_validation_agent(state: AgentWorkforceState, llm: BaseLanguageModel
     
     This agent:
     1. Takes the current flow build response and validates the Flow XML
-    2. If validation fails, creates enhanced retry context with specific fixes
-    3. Updates the state to either proceed to deployment or retry flow building
+    2. Updates the Flow Builder's memory with the actual validation results (CRITICAL FIX)
+    3. If validation fails, creates enhanced retry context with specific fixes
+    4. Updates the state to either proceed to deployment or retry flow building
     """
     print("\n=== FLOW VALIDATION AGENT ===")
     
@@ -344,6 +345,42 @@ def run_flow_validation_agent(state: AgentWorkforceState, llm: BaseLanguageModel
         feedback_message = validation_agent.get_validation_feedback_message(validation_response)
         print(feedback_message)
         
+        # CRITICAL FIX: Update Flow Builder memory with actual validation results
+        if validation_response.success:
+            try:
+                from src.agents.enhanced_flow_builder_agent import EnhancedFlowBuilderAgent
+                
+                # Load persisted memory data from state
+                persisted_memory_data = state.get("flow_builder_memory_data", {})
+                
+                # Create temporary agent instance to access memory update method
+                temp_agent = EnhancedFlowBuilderAgent(llm, persisted_memory_data)
+                
+                # Determine the attempt number from retry context
+                retry_context = flow_build_response.input_request.retry_context
+                attempt_number = retry_context.get('retry_attempt', 1) if retry_context else 1
+                
+                # Update memory with validation results
+                validation_passed = validation_response.is_valid
+                validation_errors = validation_response.errors if hasattr(validation_response, 'errors') else []
+                
+                temp_agent.update_memory_with_validation_result(
+                    flow_api_name=flow_build_response.input_request.flow_api_name,
+                    attempt_number=attempt_number,
+                    validation_passed=validation_passed,
+                    validation_errors=validation_errors
+                )
+                
+                # Save updated memory back to state
+                updated_memory_data = temp_agent.get_memory_data_for_persistence()
+                response_updates["flow_builder_memory_data"] = updated_memory_data
+                
+                validation_status = "PASSED" if validation_passed else "FAILED"
+                print(f"🧠 MEMORY: Updated attempt #{attempt_number} with validation result ({validation_status})")
+                
+            except Exception as e:
+                print(f"⚠️  Warning: Could not update Flow Builder memory with validation result: {e}")
+        
         if validation_response.success and validation_response.is_valid:
             print("✅ Flow validation passed - ready for deployment")
             # Flow is valid, can proceed to deployment
@@ -378,7 +415,7 @@ def run_flow_validation_agent(state: AgentWorkforceState, llm: BaseLanguageModel
                 print(f"📝 Retry request prepared with {len(retry_context['specific_fixes_needed'])} specific fixes")
                 
             else:
-                print(f"🛑 Maximum retries reached ({max_retries}) or retry not recommended")
+                print(f"🛑 Maximum retries ({max_retries}) reached for validation fixes, ending workflow")
                 response_updates["error_message"] = f"Flow validation failed after {build_deploy_retry_count} retries"
                 response_updates["validation_requires_retry"] = False
         

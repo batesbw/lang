@@ -261,14 +261,20 @@ class EnhancedFlowBuilderAgent:
         return self._flow_memories[flow_api_name]
     
     def _save_attempt_to_memory(self, flow_api_name: str, request: FlowBuildRequest, 
-                               response: FlowBuildResponse, attempt_number: int = 1) -> None:
+                               response: FlowBuildResponse, attempt_number: int = 1, validation_passed: Optional[bool] = None) -> None:
         """Save a flow building attempt to memory with enhanced context"""
         memory = self._get_flow_memory(flow_api_name)
+        
+        # CRITICAL FIX: Only mark as successful if BOTH XML generation AND validation succeed
+        # If validation_passed is provided, use that to override the response.success
+        actual_success = response.success
+        if validation_passed is not None:
+            actual_success = validation_passed
         
         # Create enhanced attempt data for the new memory system
         attempt_data = {
             "retry_attempt": attempt_number,
-            "success": response.success,
+            "success": actual_success,  # Use actual_success instead of response.success
             "flow_api_name": request.flow_api_name,
             "flow_label": request.flow_label,
             "flow_description": request.flow_description,
@@ -279,7 +285,7 @@ class EnhancedFlowBuilderAgent:
             "variables_created": response.variables_created if response.success else [],
             "best_practices_applied": response.best_practices_applied if response.success else [],
             "recommendations": response.recommendations if response.success else [],
-            "error_message": response.error_message if not response.success else None,
+            "error_message": response.error_message if not actual_success else None,
             "validation_errors": self._extract_validation_errors(response.validation_errors) if response.validation_errors else [],
             "retry_context": request.retry_context
         }
@@ -287,7 +293,8 @@ class EnhancedFlowBuilderAgent:
         # Save to our custom memory system
         try:
             memory.add_attempt(attempt_data)
-            logger.info(f"Saved enhanced attempt #{attempt_number} to memory for flow: {flow_api_name}")
+            status_msg = "SUCCESS" if actual_success else "FAILED"
+            logger.info(f"Saved enhanced attempt #{attempt_number} ({status_msg}) to memory for flow: {flow_api_name}")
         except Exception as e:
             logger.warning(f"Failed to save attempt to memory: {str(e)}")
     
@@ -1011,8 +1018,8 @@ FAILURE LEARNING:
                     dependencies=[]
                 )
                 
-                # Save successful attempt to memory
-                self._save_attempt_to_memory(request.flow_api_name, request, enhanced_response, retry_attempt)
+                # Save attempt to memory as "pending validation" - real success depends on validation
+                self._save_attempt_to_memory(request.flow_api_name, request, enhanced_response, retry_attempt, validation_passed=False)  # Mark as failed until validation confirms success
                 
                 logger.info(f"Successfully generated enhanced flow: {request.flow_api_name}")
                 return enhanced_response
@@ -1237,6 +1244,98 @@ FAILURE LEARNING:
         """Update the failure memory with the result of a fix attempt - REMOVED for simplification"""
         # Method removed - using simplified approach  
         pass
+
+    def update_memory_with_validation_result(self, flow_api_name: str, attempt_number: int, validation_passed: bool, validation_errors: Optional[List[Any]] = None) -> None:
+        """Update the most recent memory entry with validation results - CRITICAL FOR PREVENTING REGRESSION"""
+        memory = self._get_flow_memory(flow_api_name)
+        
+        try:
+            # Find the most recent attempt with matching attempt number
+            target_attempt = None
+            for attempt in reversed(memory.attempts):
+                if attempt.get('retry_attempt') == attempt_number:
+                    target_attempt = attempt
+                    break
+            
+            if target_attempt:
+                # Update the success status based on validation
+                old_success = target_attempt.get('success', False)
+                target_attempt['success'] = validation_passed
+                
+                # Add validation error details if failed
+                if not validation_passed and validation_errors:
+                    target_attempt['validation_errors'] = self._extract_validation_errors(validation_errors)
+                    if not target_attempt.get('error_message'):
+                        target_attempt['error_message'] = f"Flow validation failed with {len(validation_errors)} errors"
+                
+                # Re-extract patterns since success status changed
+                if old_success != validation_passed:
+                    # Remove old patterns from this attempt
+                    if old_success and not validation_passed:
+                        # Was marked successful but validation failed - remove false success patterns
+                        self._remove_false_success_patterns(memory, target_attempt)
+                    elif not old_success and validation_passed:
+                        # Was marked failed but validation passed - add success patterns
+                        self._add_success_patterns(memory, target_attempt)
+                
+                status_msg = "SUCCESS" if validation_passed else "FAILED"
+                logger.info(f"Updated memory attempt #{attempt_number} with validation result ({status_msg}) for flow: {flow_api_name}")
+            else:
+                logger.warning(f"Could not find attempt #{attempt_number} in memory to update with validation result")
+                
+        except Exception as e:
+            logger.warning(f"Failed to update memory with validation result: {str(e)}")
+    
+    def _remove_false_success_patterns(self, memory: FlowBuildingMemory, attempt_data: Dict[str, Any]) -> None:
+        """Remove patterns that were added for a false success"""
+        try:
+            # Remove patterns that would have been added for this attempt
+            xml_pattern = f"Generated valid XML of length {len(attempt_data.get('flow_xml', ''))}"
+            if xml_pattern in memory.successful_patterns:
+                memory.successful_patterns.remove(xml_pattern)
+            
+            elements = attempt_data.get('elements_created', [])
+            if elements:
+                element_pattern = f"Successfully created elements: {', '.join(elements)}"
+                if element_pattern in memory.successful_patterns:
+                    memory.successful_patterns.remove(element_pattern)
+            
+            practices = attempt_data.get('best_practices_applied', [])
+            if practices:
+                practice_pattern = f"Applied best practices: {', '.join(practices)}"
+                if practice_pattern in memory.successful_patterns:
+                    memory.successful_patterns.remove(practice_pattern)
+                    
+            # Remove key insight about this retry succeeding
+            retry_insight = f"Retry attempt #{attempt_data.get('retry_attempt', 1)} succeeded - this approach should be preserved"
+            if retry_insight in memory.key_insights:
+                memory.key_insights.remove(retry_insight)
+                
+        except Exception as e:
+            logger.warning(f"Failed to remove false success patterns: {str(e)}")
+    
+    def _add_success_patterns(self, memory: FlowBuildingMemory, attempt_data: Dict[str, Any]) -> None:
+        """Add success patterns for a newly validated successful attempt"""
+        try:
+            # Add patterns that should be added for this successful attempt
+            if attempt_data.get('flow_xml'):
+                xml_length = len(attempt_data['flow_xml'])
+                memory.successful_patterns.append(f"Generated valid XML of length {xml_length}")
+            
+            elements = attempt_data.get('elements_created', [])
+            if elements:
+                memory.successful_patterns.append(f"Successfully created elements: {', '.join(elements)}")
+            
+            practices = attempt_data.get('best_practices_applied', [])
+            if practices:
+                memory.successful_patterns.append(f"Applied best practices: {', '.join(practices)}")
+            
+            # Add key insight if this was a retry
+            if attempt_data.get('retry_attempt', 1) > 1:
+                memory.key_insights.append(f"Retry attempt #{attempt_data['retry_attempt']} succeeded - this approach should be preserved")
+                
+        except Exception as e:
+            logger.warning(f"Failed to add success patterns: {str(e)}")
 
 
 def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> AgentWorkforceState:
