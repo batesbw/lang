@@ -18,7 +18,6 @@ from langchain_core.language_models import BaseLanguageModel
 from src.state.agent_workforce_state import AgentWorkforceState
 from src.agents.authentication_agent import run_authentication_agent
 from src.agents.enhanced_flow_builder_agent import run_enhanced_flow_builder_agent
-from src.agents.flow_validation_agent import run_flow_validation_agent
 from src.agents.deployment_agent import run_deployment_agent
 from src.schemas.auth_schemas import AuthenticationRequest, SalesforceAuthResponse
 from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
@@ -101,20 +100,6 @@ def deployment_node(state: AgentWorkforceState) -> AgentWorkforceState:
         return updated_state
 
 
-def flow_validation_node(state: AgentWorkforceState) -> AgentWorkforceState:
-    """
-    LangGraph node for the Flow Validation Agent.
-    """
-    print("\n=== FLOW VALIDATION NODE ===")
-    try:
-        return run_flow_validation_agent(state, LLM)
-    except Exception as e:
-        print(f"Error in flow_validation_node: {e}")
-        updated_state = state.copy()
-        updated_state["error_message"] = f"Flow Validation Node Error: {str(e)}"
-        return updated_state
-
-
 def should_continue_after_auth(state: AgentWorkforceState) -> str:
     """
     Conditional edge function to determine if we should continue after authentication.
@@ -133,33 +118,10 @@ def should_continue_after_flow_build(state: AgentWorkforceState) -> str:
     """
     flow_response = state.get("current_flow_build_response")
     if flow_response and flow_response.get("success"):
-        print("Flow building successful, proceeding to Flow Validation.")
-        return "validation"
+        print("Flow building successful, proceeding to deployment preparation.")
+        return "prepare_deployment"
     else:
         print("Flow building failed, ending workflow.")
-        return END
-
-
-def should_continue_after_validation(state: AgentWorkforceState) -> str:
-    """
-    Conditional edge function to determine workflow continuation after flow validation.
-    """
-    validation_response = state.get("current_flow_validation_response")
-    validation_requires_retry = state.get("validation_requires_retry", False)
-    build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
-    max_retries = state.get("max_build_deploy_retries", MAX_BUILD_DEPLOY_RETRIES)
-    
-    if validation_response and validation_response.get("success") and validation_response.get("is_valid"):
-        print("✅ Flow validation passed, proceeding to deployment.")
-        return "deployment"
-    elif validation_requires_retry and build_deploy_retry_count < max_retries:
-        print(f"🔄 Flow validation failed, retrying flow build (attempt #{build_deploy_retry_count + 1})")
-        return "retry_validation"
-    else:
-        if build_deploy_retry_count >= max_retries:
-            print(f"🛑 Maximum retries ({max_retries}) reached for validation fixes, ending workflow")
-        else:
-            print("❌ Flow validation failed and retry not recommended, ending workflow.")
         return END
 
 
@@ -508,28 +470,6 @@ def prepare_deployment_request(state: AgentWorkforceState) -> AgentWorkforceStat
         return updated_state
 
 
-def prepare_retry_validation_request(state: AgentWorkforceState) -> AgentWorkforceState:
-    """
-    Node to prepare for a retry attempt after validation failure.
-    Uses the validation context created by the Flow Validation Agent.
-    """
-    print("\n=== PREPARING RETRY REQUEST FROM VALIDATION FAILURE ===")
-    
-    # The validation agent already prepared the retry context
-    # We just need to ensure the state is ready for flow builder retry
-    validation_requires_retry = state.get("validation_requires_retry", False)
-    
-    if validation_requires_retry:
-        print("✅ Retry request already prepared by Flow Validation Agent")
-        # The validation agent already updated the flow build request and retry count
-        return state
-    else:
-        print("❌ No validation retry context found")
-        updated_state = state.copy()
-        updated_state["error_message"] = "Validation retry requested but no retry context available"
-        return updated_state
-
-
 def create_workflow() -> StateGraph:
     """
     Creates and configures the LangGraph workflow with Flow Validation and retry capabilities.
@@ -541,12 +481,10 @@ def create_workflow() -> StateGraph:
     workflow.add_node("authentication", authentication_node)
     workflow.add_node("prepare_flow_request", prepare_flow_build_request)
     workflow.add_node("flow_builder", flow_builder_node)
-    workflow.add_node("flow_validation", flow_validation_node)
     workflow.add_node("prepare_deployment_request", prepare_deployment_request)
     workflow.add_node("deployment", deployment_node)
     workflow.add_node("record_cycle", record_build_deploy_cycle)
     workflow.add_node("prepare_retry_flow_request", prepare_retry_flow_request)
-    workflow.add_node("prepare_retry_validation_request", prepare_retry_validation_request)
     
     # Set entry point
     workflow.set_entry_point("authentication")
@@ -564,23 +502,12 @@ def create_workflow() -> StateGraph:
     # Add regular edges
     workflow.add_edge("prepare_flow_request", "flow_builder")
     
-    # Flow builder -> Flow validation
+    # Flow builder -> Deployment preparation (with conditional check)
     workflow.add_conditional_edges(
         "flow_builder",
         should_continue_after_flow_build,
         {
-            "validation": "flow_validation",
-            END: END
-        }
-    )
-    
-    # Flow validation -> Deployment or Retry
-    workflow.add_conditional_edges(
-        "flow_validation",
-        should_continue_after_validation,
-        {
-            "deployment": "prepare_deployment_request",
-            "retry_validation": "prepare_retry_validation_request",
+            "prepare_deployment": "prepare_deployment_request",
             END: END
         }
     )
@@ -603,9 +530,6 @@ def create_workflow() -> StateGraph:
     
     # Add edge from deployment retry preparation back to flow builder
     workflow.add_edge("prepare_retry_flow_request", "flow_builder")
-    
-    # Add edge from validation retry preparation back to flow builder
-    workflow.add_edge("prepare_retry_validation_request", "flow_builder")
     
     return workflow
 
@@ -636,8 +560,6 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         "salesforce_session": None,
         "current_flow_build_request": None,
         "current_flow_build_response": None,
-        "current_flow_validation_response": None,
-        "validation_requires_retry": False,
         "current_deployment_request": None,
         "current_deployment_response": None,
         "messages": [],
@@ -739,32 +661,6 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
             print("❌ Flow Building: FAILED (Could not parse response)")
     else:
         print("⏭️  Flow Building: SKIPPED")
-    
-    # Flow validation status
-    validation_response_dict = final_state.get("current_flow_validation_response")
-    if validation_response_dict:
-        try:
-            from src.schemas.flow_validation_schemas import FlowValidationResponse
-            validation_response = FlowValidationResponse(**validation_response_dict)
-            if validation_response.success and validation_response.is_valid:
-                print("✅ Flow Validation: SUCCESS")
-                print(f"   Scanner Version: {validation_response.scanner_version or 'unknown'}")
-                if validation_response.warning_count > 0:
-                    print(f"   Warnings: {validation_response.warning_count}")
-            elif validation_response.success and not validation_response.is_valid:
-                print("❌ Flow Validation: FAILED")
-                print(f"   Errors: {validation_response.error_count}")
-                print(f"   Warnings: {validation_response.warning_count}")
-                if validation_response.errors:
-                    print(f"   Top Error: {validation_response.errors[0].rule_name}")
-            else:
-                print("❌ Flow Validation: TOOL ERROR")
-                if validation_response.error_message:
-                    print(f"   Error: {validation_response.error_message}")
-        except Exception:
-            print("❌ Flow Validation: FAILED (Could not parse response)")
-    else:
-        print("⏭️  Flow Validation: SKIPPED")
     
     # Deployment status
     deployment_response_dict = final_state.get("current_deployment_response")

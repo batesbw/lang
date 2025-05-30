@@ -17,10 +17,6 @@ class AgentWorkforceState(TypedDict, total=False):
     current_flow_build_response: Optional[Dict[str, Any]]  # Serialized FlowBuildResponse
     flow_builder_memory_data: Optional[Dict[str, Any]]  # Persistent memory data for enhanced flow builder
 
-    # Flow Validation related state
-    current_flow_validation_response: Optional[Dict[str, Any]]  # Serialized FlowValidationResponse
-    validation_requires_retry: Optional[bool]  # Whether validation failed and requires retry
-
     # User requirements
     user_story: Optional[Dict[str, Any]]  # Serialized UserStory with acceptance criteria
 

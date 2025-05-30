@@ -19,7 +19,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import xml.etree.ElementTree as ET
 
 from ..tools.rag_tools import RAG_TOOLS, search_flow_knowledge_base, find_similar_sample_flows
-from ..tools.lightning_flow_scanner_rag import LIGHTNING_FLOW_SCANNER_RAG_TOOLS, get_proactive_flow_guidance, search_flow_scanner_rules
 from ..tools.flow_builder_tools import BasicFlowXmlGeneratorTool
 from ..schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from ..state.agent_workforce_state import AgentWorkforceState
@@ -461,60 +460,16 @@ class EnhancedFlowBuilderAgent:
         return ""
 
     def retrieve_knowledge(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Retrieve relevant knowledge from RAG sources including Lightning Flow Scanner best practices"""
+        """Retrieve relevant knowledge from RAG sources"""
         
         knowledge = {
             "best_practices": [],
             "sample_flows": [],
             "patterns": [],
-            "troubleshooting": [],
-            "lightning_flow_scanner_guidance": {},
-            "scanner_rules": []
+            "troubleshooting": []
         }
         
         try:
-            # PROACTIVE: Get Lightning Flow Scanner guidance BEFORE generation
-            logger.info("Retrieving proactive Lightning Flow Scanner guidance")
-            
-            # Extract flow elements from analysis for more targeted guidance
-            flow_elements = []
-            for element in analysis.get("key_elements", []):
-                if element == "record_creation":
-                    flow_elements.append("Record Create")
-                elif element == "record_update":
-                    flow_elements.append("Record Update")
-                elif element == "email":
-                    flow_elements.append("Email Alert")
-                elif element == "conditional_logic":
-                    flow_elements.append("Decision")
-                elif element == "user_interaction":
-                    flow_elements.append("Screen")
-                elif element == "loops":
-                    flow_elements.append("Loop")
-                elif element == "approval":
-                    flow_elements.append("Submit for Approval")
-            
-            # Get comprehensive proactive guidance
-            scanner_guidance = get_proactive_flow_guidance.invoke({
-                "flow_requirements": " ".join(analysis["search_queries"]),
-                "flow_elements": flow_elements
-            })
-            
-            if scanner_guidance.get("success"):
-                knowledge["lightning_flow_scanner_guidance"] = scanner_guidance["guidance"]
-                logger.info(f"Retrieved Lightning Flow Scanner guidance: {scanner_guidance['total_recommendations']} recommendations")
-            else:
-                logger.warning(f"Failed to get Lightning Flow Scanner guidance: {scanner_guidance.get('message', 'Unknown error')}")
-            
-            # Search for specific scanner rules relevant to the flow type
-            for search_term in ["naming convention", "fault path", "performance", "unused variable"]:
-                scanner_rules = search_flow_scanner_rules.invoke({
-                    "query": search_term,
-                    "max_results": 2
-                })
-                knowledge["scanner_rules"].extend(scanner_rules)
-            
-            # Original RAG knowledge retrieval
             # Search for best practices
             for query in analysis["search_queries"]:
                 docs = search_flow_knowledge_base.invoke({
@@ -552,7 +507,7 @@ class EnhancedFlowBuilderAgent:
             logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
                        f"{len(knowledge['sample_flows'])} sample flows, "
                        f"{len(knowledge['patterns'])} patterns, "
-                       f"{len(knowledge['scanner_rules'])} scanner rules")
+                       f"{len(knowledge['troubleshooting'])} troubleshooting guides")
             
         except Exception as e:
             logger.error(f"Error retrieving knowledge: {str(e)}")
@@ -561,9 +516,7 @@ class EnhancedFlowBuilderAgent:
                 "best_practices": [],
                 "sample_flows": [],
                 "patterns": [],
-                "troubleshooting": [],
-                "lightning_flow_scanner_guidance": {},
-                "scanner_rules": []
+                "troubleshooting": []
             }
         
         return knowledge
@@ -623,89 +576,6 @@ class EnhancedFlowBuilderAgent:
                     ""
                 ])
         
-        # Add Lightning Flow Scanner best practices (PROACTIVE GUIDANCE)
-        scanner_guidance = knowledge.get("lightning_flow_scanner_guidance", {})
-        if scanner_guidance:
-            prompt_parts.extend([
-                "🔍 LIGHTNING FLOW SCANNER BEST PRACTICES (APPLY DURING GENERATION):",
-                "The following are industry-standard best practices from Lightning Flow Scanner.",
-                "CRITICAL: Apply these proactively while building the flow, not reactively after validation.",
-                ""
-            ])
-            
-            # General best practices
-            if scanner_guidance.get("general_best_practices"):
-                prompt_parts.append("📋 GENERAL BEST PRACTICES:")
-                for practice in scanner_guidance["general_best_practices"][:3]:
-                    rule_name = practice.get("rule_name", "Unknown")
-                    severity = practice.get("severity", "unknown")
-                    prompt_parts.append(f"   • [{severity.upper()}] {rule_name}")
-                    # Include brief content excerpt
-                    content = practice.get("content", "")
-                    if content and len(content) > 50:
-                        excerpt = content[:200] + "..." if len(content) > 200 else content
-                        prompt_parts.append(f"     {excerpt}")
-                prompt_parts.append("")
-            
-            # Naming conventions
-            if scanner_guidance.get("naming_conventions"):
-                prompt_parts.append("📝 NAMING CONVENTIONS:")
-                for convention in scanner_guidance["naming_conventions"][:2]:
-                    rule_name = convention.get("rule_name", "Unknown")
-                    prompt_parts.append(f"   • {rule_name}")
-                    content = convention.get("content", "")
-                    if content and len(content) > 50:
-                        excerpt = content[:150] + "..." if len(content) > 150 else content
-                        prompt_parts.append(f"     {excerpt}")
-                prompt_parts.append("")
-            
-            # Error handling guidance
-            if scanner_guidance.get("error_handling_guidance"):
-                prompt_parts.append("🛠️ ERROR HANDLING REQUIREMENTS:")
-                for guidance in scanner_guidance["error_handling_guidance"][:2]:
-                    rule_name = guidance.get("rule_name", "Unknown")
-                    severity = guidance.get("severity", "unknown")
-                    prompt_parts.append(f"   • [{severity.upper()}] {rule_name}")
-                    content = guidance.get("content", "")
-                    if content and len(content) > 50:
-                        excerpt = content[:150] + "..." if len(content) > 150 else content
-                        prompt_parts.append(f"     {excerpt}")
-                prompt_parts.append("")
-            
-            # Performance recommendations
-            if scanner_guidance.get("performance_recommendations"):
-                prompt_parts.append("⚡ PERFORMANCE REQUIREMENTS:")
-                for perf in scanner_guidance["performance_recommendations"][:2]:
-                    rule_name = perf.get("rule_name", "Unknown")
-                    prompt_parts.append(f"   • {rule_name}")
-                    content = perf.get("content", "")
-                    if content and len(content) > 50:
-                        excerpt = content[:150] + "..." if len(content) > 150 else content
-                        prompt_parts.append(f"     {excerpt}")
-                prompt_parts.append("")
-            
-            # Element-specific guidance
-            if scanner_guidance.get("element_specific_guidance"):
-                prompt_parts.append("🔧 ELEMENT-SPECIFIC BEST PRACTICES:")
-                for element_guide in scanner_guidance["element_specific_guidance"][:3]:
-                    element = element_guide.get("element", "Unknown")
-                    prompt_parts.append(f"   {element} Element:")
-                    for guide in element_guide.get("guidance", [])[:2]:
-                        rule_name = guide.get("rule_name", "Unknown")
-                        prompt_parts.append(f"     • {rule_name}")
-                        content = guide.get("content", "")
-                        if content and len(content) > 50:
-                            excerpt = content[:120] + "..." if len(content) > 120 else content
-                            prompt_parts.append(f"       {excerpt}")
-                prompt_parts.append("")
-            
-            prompt_parts.extend([
-                "🎯 CRITICAL: These are NOT suggestions - they are REQUIREMENTS for industry-standard flow quality.",
-                "Apply ALL relevant best practices as you build the flow. This proactive approach will ensure",
-                "the flow passes validation on the first attempt and meets enterprise standards.",
-                ""
-            ])
-
         # Add best practices from general RAG
         if knowledge.get("best_practices"):
             prompt_parts.append("SALESFORCE FLOW BEST PRACTICES:")
@@ -741,115 +611,13 @@ class EnhancedFlowBuilderAgent:
             error_patterns = retry_context.get("common_patterns", [])
             previous_summary = retry_context.get("previous_attempts_summary", "")
             
-            # Handle both deployment failures and validation failures
-            validation_failed = retry_context.get("validation_failed", False)
-            scanner_validation = retry_context.get("scanner_validation", {})
-            validation_errors = retry_context.get("validation_errors", [])
-            
-            if deployment_error or original_flow_xml or validation_failed:
-                if validation_failed:
-                    prompt_parts.extend([
-                        f"🔄 VALIDATION RETRY CONTEXT (Attempt #{retry_attempt}):",
-                        "The previous flow XML FAILED Lightning Flow Scanner validation and must be rebuilt to fix the errors.",
-                        ""
-                    ])
-                else:
-                    prompt_parts.extend([
-                        f"🔄 DEPLOYMENT RETRY CONTEXT (Attempt #{retry_attempt}):",
-                        "The previous flow deployment FAILED and must be completely rebuilt to fix the errors.",
-                        ""
-                    ])
-                
-                # Handle validation-specific context
-                if validation_failed and scanner_validation:
-                    prompt_parts.extend([
-                        "⚠️ FLOW SCANNER VALIDATION FAILED:",
-                        f"Total violations: {scanner_validation.get('total_violations', 0)}",
-                        f"Errors: {scanner_validation.get('error_count', 0)}",
-                        f"Warnings: {scanner_validation.get('warning_count', 0)}",
-                        f"Retry guidance: {scanner_validation.get('retry_guidance', 'Fix all validation errors')}",
-                        ""
-                    ])
-                    
-                    if scanner_validation.get('blocking_issues'):
-                        prompt_parts.append("🚫 BLOCKING VALIDATION ISSUES:")
-                        for issue in scanner_validation['blocking_issues']:
-                            prompt_parts.append(f"- {issue}")
-                        prompt_parts.append("")
-                
-                # Handle specific validation errors
-                if validation_errors:
-                    prompt_parts.extend([
-                        "🔍 SPECIFIC VALIDATION ERRORS TO FIX:",
-                    ])
-                    for i, error in enumerate(validation_errors, 1):
-                        rule = error.get('rule', 'Unknown')
-                        message = error.get('message', 'No message')
-                        location = error.get('location', 'Unknown location')
-                        suggested_fix = error.get('suggested_fix', 'See rule documentation')
-                        
-                        prompt_parts.extend([
-                            f"{i}. {rule}:",
-                            f"   Message: {message}",
-                            f"   Location: {location}",
-                            f"   Fix: {suggested_fix}",
-                            ""
-                        ])
-                
-                if error_analysis:
-                    prompt_parts.extend([
-                        "📊 STRUCTURED ERROR ANALYSIS:",
-                        f"Error Type: {error_analysis.get('error_type', 'unknown')}",
-                        f"Severity: {error_analysis.get('severity', 'medium')}",
-                        ""
-                    ])
-                    
-                    if error_analysis.get('api_name_issues'):
-                        prompt_parts.extend([
-                            "🏷️ API NAME ISSUES DETECTED:",
-                            "- The previous flow had invalid API names that caused deployment failure",
-                            "- ALL API names must be alphanumeric and start with a letter",
-                            "- NO spaces, hyphens, or special characters allowed",
-                            ""
-                        ])
-                    
-                    if error_analysis.get('structural_issues'):
-                        prompt_parts.extend([
-                            "🏗️ STRUCTURAL ISSUES DETECTED:",
-                        ])
-                        for issue in error_analysis['structural_issues']:
-                            prompt_parts.append(f"- {issue}")
-                        prompt_parts.append("")
-                    
-                    if error_analysis.get('xml_issues'):
-                        prompt_parts.extend([
-                            "📄 XML ISSUES DETECTED:",
-                        ])
-                        for issue in error_analysis['xml_issues']:
-                            prompt_parts.append(f"- {issue}")
-                        prompt_parts.append("")
-                
-                if specific_fixes:
-                    prompt_parts.extend([
-                        "🔧 REQUIRED FIXES (MANDATORY TO IMPLEMENT):",
-                    ])
-                    for i, fix in enumerate(specific_fixes, 1):
-                        prompt_parts.append(f"{i}. {fix}")
-                    prompt_parts.append("")
-                
-                if error_patterns:
-                    prompt_parts.extend([
-                        "⚠️ ERROR PATTERNS TO AVOID:",
-                        f"The following patterns caused the previous failure: {', '.join(error_patterns)}",
-                        ""
-                    ])
-                
-                if previous_summary:
-                    prompt_parts.extend([
-                        "📚 PREVIOUS ATTEMPTS CONTEXT:",
-                        previous_summary,
-                        ""
-                    ])
+            # Handle deployment failures only (validation removed from workflow)
+            if deployment_error or original_flow_xml:
+                prompt_parts.extend([
+                    f"🔄 DEPLOYMENT RETRY CONTEXT (Attempt #{retry_attempt}):",
+                    "The previous flow deployment FAILED and must be completely rebuilt to fix the errors.",
+                    ""
+                ])
                 
                 if deployment_error:
                     prompt_parts.extend([
@@ -883,37 +651,85 @@ class EnhancedFlowBuilderAgent:
                     "5. You MUST use the memory context to build upon previous learnings",
                     ""
                 ])
-                
-                if validation_failed:
-                    prompt_parts.extend([
-                        "🛠️ VALIDATION SUCCESS CHECKLIST:",
-                        "✓ All flow elements follow Salesforce best practices",
-                        "✓ No hardcoded IDs or URLs in the flow",
-                        "✓ No DML or SOQL operations inside loops",
-                        "✓ All operations include proper fault handling",
-                        "✓ Flow uses appropriate null checking and error handling",
-                        "✓ All elements are connected and serve a purpose",
-                        "✓ Flow follows proper naming conventions",
-                        "✓ Flow is using the latest API version",
-                        ""
-                    ])
-                else:
-                    prompt_parts.extend([
-                        "🛠️ DEPLOYMENT SUCCESS CHECKLIST:",
-                        "✓ All API names are alphanumeric and start with a letter",
-                        "✓ No spaces, hyphens, or special characters in API names", 
-                        "✓ All element references are valid and match existing elements",
-                        "✓ Flow structure is complete with all required elements",
-                        "✓ XML is well-formed and follows Salesforce schema",
-                        "✓ Flow logic fulfills the business requirements",
-                        ""
-                    ])
-                
+            
+            if error_analysis:
                 prompt_parts.extend([
-                    "💡 STRATEGY: Start fresh with the business requirements, design the flow to meet them,",
-                    "    then apply all the deployment/validation fixes as you build. Use memory context for guidance.",
+                    "📊 STRUCTURED ERROR ANALYSIS:",
+                    f"Error Type: {error_analysis.get('error_type', 'unknown')}",
+                    f"Severity: {error_analysis.get('severity', 'medium')}",
                     ""
                 ])
+                
+                if error_analysis.get('api_name_issues'):
+                    prompt_parts.extend([
+                        "🏷️ API NAME ISSUES DETECTED:",
+                        "- The previous flow had invalid API names that caused deployment failure",
+                        "- ALL API names must be alphanumeric and start with a letter",
+                        "- NO spaces, hyphens, or special characters allowed",
+                        ""
+                    ])
+                
+                if error_analysis.get('structural_issues'):
+                    prompt_parts.extend([
+                        "🏗️ STRUCTURAL ISSUES DETECTED:",
+                    ])
+                    for issue in error_analysis['structural_issues']:
+                        prompt_parts.append(f"- {issue}")
+                    prompt_parts.append("")
+                
+                if error_analysis.get('xml_issues'):
+                    prompt_parts.extend([
+                        "📄 XML ISSUES DETECTED:",
+                    ])
+                    for issue in error_analysis['xml_issues']:
+                        prompt_parts.append(f"- {issue}")
+                    prompt_parts.append("")
+            
+            if specific_fixes:
+                prompt_parts.extend([
+                    "🔧 REQUIRED FIXES (MANDATORY TO IMPLEMENT):",
+                ])
+                for i, fix in enumerate(specific_fixes, 1):
+                    prompt_parts.append(f"{i}. {fix}")
+                prompt_parts.append("")
+            
+            if error_patterns:
+                prompt_parts.extend([
+                    "⚠️ ERROR PATTERNS TO AVOID:",
+                    f"The following patterns caused the previous failure: {', '.join(error_patterns)}",
+                    ""
+                ])
+            
+            if previous_summary:
+                prompt_parts.extend([
+                    "📚 PREVIOUS ATTEMPTS CONTEXT:",
+                    previous_summary,
+                    ""
+                ])
+            
+            if deployment_error:
+                prompt_parts.extend([
+                    "🔥 PREVIOUS DEPLOYMENT ERROR:",
+                    deployment_error,
+                    ""
+                ])
+            
+            prompt_parts.extend([
+                "🛠️ DEPLOYMENT SUCCESS CHECKLIST:",
+                "✓ All API names are alphanumeric and start with a letter",
+                "✓ No spaces, hyphens, or special characters in API names", 
+                "✓ All element references are valid and match existing elements",
+                "✓ Flow structure is complete with all required elements",
+                "✓ XML is well-formed and follows Salesforce schema",
+                "✓ Flow logic fulfills the business requirements",
+                ""
+            ])
+            
+            prompt_parts.extend([
+                "💡 STRATEGY: Start fresh with the business requirements, design the flow to meet them,",
+                "    then apply all the deployment fixes as you build. Use memory context for guidance.",
+                ""
+            ])
         
         prompt_parts.extend([
             "📋 FINAL REQUIREMENTS:",

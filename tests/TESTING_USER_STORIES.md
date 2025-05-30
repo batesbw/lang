@@ -75,27 +75,27 @@ The Salesforce Agent Workforce now supports user stories and acceptance criteria
 
 **Sample Input**:
 ```json
-{
-  "current_auth_request": {
-    "org_alias": "E2E_TEST_ORG"
-  },
-  "user_story": {
-    "title": "Account Contact Counter",
-    "description": "As a sales manager, I want the number of Contacts directly associated with an Account to appear on the account record, so I can quickly check the size of the Account",
-    "acceptance_criteria": [
-      "Count of contacts should update immediately when creating and/or deleting contacts",
-      "Count should be saved the Count_of_Contacts__c field on the Account",
-      "If there are no contacts associated with an account, the count should be 0"
-    ],
-    "priority": "High",
-    "business_context": "Staff just need a quick way to view the size of their accounts",
-    "affected_objects": ["Account", "Contact"],
-    "user_personas": ["Sales Manager", "Sales Representative", "Lead Routing Admin"]
-  },
-  "is_authenticated": false,
-  "retry_count": 0,
-  "messages": []
-}
+  {
+    "current_auth_request": {
+      "org_alias": "E2E_TEST_ORG"
+    },
+    "user_story": {
+      "title": "Account Contact Counter",
+      "description": "As a sales manager, I want the number of Contacts directly associated with an Account to appear on the account record, so I can quickly check the size of the Account",
+      "acceptance_criteria": [
+        "Count of contacts should update immediately when creating and/or deleting contacts",
+        "Count should be saved the Count_of_Contacts__c field on the Account",
+        "If there are no contacts associated with an account, the count should be 0"
+      ],
+      "priority": "High",
+      "business_context": "Staff just need a quick way to view the size of their accounts",
+      "affected_objects": ["Account", "Contact"],
+      "user_personas": ["Sales Manager", "Sales Representative", "Lead Routing Admin"]
+    },
+    "is_authenticated": false,
+    "retry_count": 0,
+    "messages": []
+  }
 ```
 
 ### Method 2: Direct API Testing
