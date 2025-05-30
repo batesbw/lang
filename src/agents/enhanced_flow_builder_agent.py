@@ -7,7 +7,7 @@ This agent leverages RAG (Retrieval-Augmented Generation) to build better Salesf
 3. Using retrieved context to generate more accurate and robust flows
 4. Learning from documented solutions and common patterns
 5. Learning from deployment failures and applying fixes
-6. Maintaining conversational memory across retry attempts
+6. Maintaining conversational memory across retry attempts with preserved successful patterns
 """
 
 import os
@@ -16,43 +16,168 @@ from typing import Optional, List, Dict, Any
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain.memory import ConversationSummaryBufferMemory
-from langchain_community.chat_message_histories import ChatMessageHistory
 import xml.etree.ElementTree as ET
 
 from ..tools.rag_tools import RAG_TOOLS, search_flow_knowledge_base, find_similar_sample_flows
+from ..tools.lightning_flow_scanner_rag import LIGHTNING_FLOW_SCANNER_RAG_TOOLS, get_proactive_flow_guidance, search_flow_scanner_rules
 from ..tools.flow_builder_tools import BasicFlowXmlGeneratorTool
 from ..schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from ..state.agent_workforce_state import AgentWorkforceState
 
 logger = logging.getLogger(__name__)
 
-class EnhancedFlowBuilderAgent:
-    """Enhanced Flow Builder Agent with RAG capabilities, failure learning, and conversational memory"""
+class FlowBuildingMemory:
+    """Custom memory system that preserves successful patterns and key improvements"""
     
-    def __init__(self, llm: BaseLanguageModel):
+    def __init__(self, max_attempts: int = 10):
+        self.max_attempts = max_attempts
+        self.attempts: List[Dict[str, Any]] = []
+        self.successful_patterns: List[str] = []
+        self.failed_patterns: List[str] = []
+        self.key_insights: List[str] = []
+    
+    def add_attempt(self, attempt_data: Dict[str, Any]) -> None:
+        """Add a new attempt and extract patterns"""
+        self.attempts.append(attempt_data)
+        
+        # Extract patterns based on success/failure
+        if attempt_data.get('success', False):
+            # Extract successful patterns
+            if attempt_data.get('flow_xml'):
+                xml_length = len(attempt_data['flow_xml'])
+                self.successful_patterns.append(f"Generated valid XML of length {xml_length}")
+            
+            if attempt_data.get('elements_created'):
+                elements = attempt_data['elements_created']
+                self.successful_patterns.append(f"Successfully created elements: {', '.join(elements)}")
+            
+            if attempt_data.get('best_practices_applied'):
+                practices = attempt_data['best_practices_applied']
+                self.successful_patterns.append(f"Applied best practices: {', '.join(practices)}")
+            
+            # Add key insights from successful attempts
+            if attempt_data.get('retry_attempt', 1) > 1:
+                self.key_insights.append(f"Retry attempt #{attempt_data['retry_attempt']} succeeded - this approach should be preserved")
+        else:
+            # Extract failed patterns
+            error_msg = attempt_data.get('error_message', '')
+            if error_msg:
+                self.failed_patterns.append(f"Failed approach: {error_msg[:100]}")
+        
+        # Limit memory size
+        if len(self.attempts) > self.max_attempts:
+            # Keep most recent attempts and preserve successful ones
+            successful_attempts = [a for a in self.attempts if a.get('success', False)]
+            recent_attempts = self.attempts[-5:]  # Keep last 5
+            
+            # Combine, avoiding duplicates
+            preserved_attempts = successful_attempts + recent_attempts
+            # Remove duplicates by attempt number
+            seen_attempts = set()
+            unique_attempts = []
+            for attempt in preserved_attempts:
+                attempt_id = f"{attempt.get('retry_attempt', 1)}_{attempt.get('success', False)}"
+                if attempt_id not in seen_attempts:
+                    unique_attempts.append(attempt)
+                    seen_attempts.add(attempt_id)
+            
+            self.attempts = unique_attempts
+    
+    def get_memory_context(self) -> str:
+        """Generate memory context that prioritizes successful patterns"""
+        if not self.attempts:
+            return "No previous attempts found for this flow."
+        
+        context_parts = []
+        
+        # Add successful patterns first (most important)
+        if self.successful_patterns:
+            context_parts.append("🎯 SUCCESSFUL PATTERNS TO PRESERVE:")
+            for pattern in self.successful_patterns[-5:]:  # Last 5 successful patterns
+                context_parts.append(f"  ✅ {pattern}")
+            context_parts.append("")
+        
+        # Add key insights
+        if self.key_insights:
+            context_parts.append("💡 KEY INSIGHTS:")
+            for insight in self.key_insights[-3:]:  # Last 3 insights
+                context_parts.append(f"  🧠 {insight}")
+            context_parts.append("")
+        
+        # Add recent attempt summary
+        context_parts.append("📊 RECENT ATTEMPTS SUMMARY:")
+        for attempt in self.attempts[-3:]:  # Last 3 attempts
+            attempt_num = attempt.get('retry_attempt', 1)
+            success = attempt.get('success', False)
+            status = "✅ SUCCESS" if success else "❌ FAILED"
+            
+            if success:
+                context_parts.append(f"  Attempt #{attempt_num}: {status}")
+                context_parts.append(f"    - Generated valid flow XML")
+                if attempt.get('elements_created'):
+                    context_parts.append(f"    - Created {len(attempt['elements_created'])} elements")
+                if attempt.get('best_practices_applied'):
+                    context_parts.append(f"    - Applied {len(attempt['best_practices_applied'])} best practices")
+                context_parts.append(f"    - THIS APPROACH WORKED - PRESERVE IT!")
+            else:
+                error_msg = attempt.get('error_message', 'Unknown error')[:80]
+                context_parts.append(f"  Attempt #{attempt_num}: {status} - {error_msg}")
+        
+        context_parts.append("")
+        
+        # Add patterns to avoid
+        if self.failed_patterns:
+            context_parts.append("⚠️ PATTERNS TO AVOID:")
+            for pattern in self.failed_patterns[-3:]:  # Last 3 failed patterns
+                context_parts.append(f"  ❌ {pattern}")
+            context_parts.append("")
+        
+        # Add critical instruction
+        context_parts.extend([
+            "🚨 CRITICAL MEMORY INSTRUCTION:",
+            "If a previous attempt succeeded (marked with ✅), you MUST build upon that success.",
+            "Do NOT revert to approaches that already failed. Preserve successful patterns.",
+            "Each retry should be BETTER than the last successful attempt, not worse.",
+            ""
+        ])
+        
+        return "\n".join(context_parts)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize memory for persistence"""
+        return {
+            "attempts": self.attempts,
+            "successful_patterns": self.successful_patterns,
+            "failed_patterns": self.failed_patterns,
+            "key_insights": self.key_insights
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FlowBuildingMemory":
+        """Deserialize memory from persistence"""
+        memory = cls()
+        memory.attempts = data.get("attempts", [])
+        memory.successful_patterns = data.get("successful_patterns", [])
+        memory.failed_patterns = data.get("failed_patterns", [])
+        memory.key_insights = data.get("key_insights", [])
+        return memory
+
+class EnhancedFlowBuilderAgent:
+    """Enhanced Flow Builder Agent with RAG capabilities, failure learning, and improved memory"""
+    
+    def __init__(self, llm: BaseLanguageModel, persisted_memory_data: Optional[Dict[str, Any]] = None):
         self.llm = llm
         self.xml_generator = BasicFlowXmlGeneratorTool()
         
-        # Initialize conversational memory for retry attempts
-        self.memory = ConversationSummaryBufferMemory(
-            llm=llm,
-            max_token_limit=4000,  # Sufficient for flow building context
-            memory_key="conversation_history",
-            input_key="input",
-            output_key="output",
-            return_messages=True,
-            moving_summary_buffer="Previous flow building attempts and decisions",
-            chat_memory=ChatMessageHistory()
-        )
-        
-        # Memory storage for different flow sessions
-        self._flow_memories: Dict[str, ConversationSummaryBufferMemory] = {}
+        # Use custom memory system instead of ConversationSummaryBufferMemory
+        self._flow_memories: Dict[str, FlowBuildingMemory] = {}
+        if persisted_memory_data:
+            self._load_persisted_memory(persisted_memory_data)
         
         # System prompt for the enhanced agent
         self.system_prompt = """
         You are an expert Salesforce Flow Builder Agent with access to a comprehensive knowledge base, 
-        sample flow repository, deployment failure learning system, and conversational memory. Your role is to create high-quality, 
+        sample flow repository, deployment failure learning system, and enhanced memory. Your role is to create high-quality, 
         production-ready Salesforce flows based on user requirements and learn from past attempts.
         
         Your capabilities include:
@@ -63,28 +188,29 @@ class EnhancedFlowBuilderAgent:
         5. Generating robust, well-structured flow XML
         6. Providing recommendations and explanations for design choices
         7. Adapting flows based on failure patterns and successful resolutions
-        8. Maintaining memory of previous attempts to improve iterative flow building
+        8. Maintaining memory of previous attempts with preserved successful patterns
         
         When building flows, always:
         - Start by understanding the business requirements thoroughly
         - Check for similar past failures and their resolutions
-        - Review your previous attempts and reasoning if this is a retry
+        - Review your previous attempts and PRESERVE successful patterns from earlier attempts
         - Search for relevant best practices and patterns
         - Look for similar sample flows for reference
         - Apply Salesforce flow best practices (performance, error handling, etc.)
         - Generate clean, maintainable flow XML with failure prevention in mind
         - Provide clear explanations for your design decisions
         - Learn from any deployment failures to improve future flows
-        - Build upon previous attempts when retrying, avoiding repeated mistakes
+        - BUILD UPON previous successful attempts - never regress to failed approaches
         
         When fixing deployment failures:
         - Analyze the error message and categorize the failure type
         - Look for similar past failures and successful fixes
-        - Review what you tried before and why it might have failed
-        - Apply proven solutions from the failure memory
+        - Review what you tried before and what WORKED in previous attempts
+        - Apply proven solutions from successful attempts
         - Document the attempted fix for future learning
         - Focus on the most likely root cause based on historical data and previous attempts
-        - Avoid repeating the same approach that failed before
+        - NEVER repeat approaches that already failed
+        - ALWAYS preserve elements and patterns from successful attempts
         
         Focus on creating flows that are:
         - Performant and scalable
@@ -92,22 +218,46 @@ class EnhancedFlowBuilderAgent:
         - Well-documented and maintainable
         - Following Salesforce best practices
         - Avoiding known failure patterns
-        - Incorporating lessons learned from previous attempts
+        - Building upon successful patterns from previous attempts
+        
+        CRITICAL: If you see successful patterns from previous attempts, you MUST preserve and build upon them.
+        Never regress to approaches that already failed. Each attempt should be better than the last.
         """
     
-    def _get_flow_memory(self, flow_api_name: str) -> ConversationSummaryBufferMemory:
+    def _load_persisted_memory(self, persisted_memory_data: Dict[str, Any]) -> None:
+        """Load persisted memory data back into the agent"""
+        try:
+            for flow_api_name, memory_data in persisted_memory_data.items():
+                if memory_data:
+                    # Create new memory instance for this flow
+                    memory = FlowBuildingMemory()
+                    
+                    # Restore memory data
+                    memory.attempts = memory_data.get("attempts", [])
+                    memory.successful_patterns = memory_data.get("successful_patterns", [])
+                    memory.failed_patterns = memory_data.get("failed_patterns", [])
+                    memory.key_insights = memory_data.get("key_insights", [])
+                    
+                    self._flow_memories[flow_api_name] = memory
+                    logger.info(f"Restored memory for flow: {flow_api_name} with {len(memory_data['attempts'])} attempts")
+        except Exception as e:
+            logger.warning(f"Failed to load persisted memory: {str(e)}")
+    
+    def get_memory_data_for_persistence(self) -> Dict[str, Any]:
+        """Extract memory data for persistence in state"""
+        memory_data = {}
+        try:
+            for flow_api_name, memory in self._flow_memories.items():
+                memory_data[flow_api_name] = memory.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to extract memory data for persistence: {str(e)}")
+            
+        return memory_data
+    
+    def _get_flow_memory(self, flow_api_name: str) -> FlowBuildingMemory:
         """Get or create memory for a specific flow"""
         if flow_api_name not in self._flow_memories:
-            self._flow_memories[flow_api_name] = ConversationSummaryBufferMemory(
-                llm=self.llm,
-                max_token_limit=4000,
-                memory_key="conversation_history",
-                input_key="input",
-                output_key="output",
-                return_messages=True,
-                moving_summary_buffer=f"Flow building attempts for {flow_api_name}",
-                chat_memory=ChatMessageHistory()
-            )
+            self._flow_memories[flow_api_name] = FlowBuildingMemory()
         return self._flow_memories[flow_api_name]
     
     def _save_attempt_to_memory(self, flow_api_name: str, request: FlowBuildRequest, 
@@ -115,152 +265,66 @@ class EnhancedFlowBuilderAgent:
         """Save a flow building attempt to memory with enhanced context"""
         memory = self._get_flow_memory(flow_api_name)
         
-        # Create enhanced input context
-        input_context = f"""
-        === FLOW BUILDING ATTEMPT #{attempt_number} ===
+        # Create enhanced attempt data for the new memory system
+        attempt_data = {
+            "retry_attempt": attempt_number,
+            "success": response.success,
+            "flow_api_name": request.flow_api_name,
+            "flow_label": request.flow_label,
+            "flow_description": request.flow_description,
+            "user_story_title": request.user_story.title if request.user_story else None,
+            "user_story_priority": request.user_story.priority if request.user_story else None,
+            "flow_xml": response.flow_xml if response.success else None,
+            "elements_created": response.elements_created if response.success else [],
+            "variables_created": response.variables_created if response.success else [],
+            "best_practices_applied": response.best_practices_applied if response.success else [],
+            "recommendations": response.recommendations if response.success else [],
+            "error_message": response.error_message if not response.success else None,
+            "validation_errors": self._extract_validation_errors(response.validation_errors) if response.validation_errors else [],
+            "retry_context": request.retry_context
+        }
         
-        🎯 REQUEST DETAILS:
-        - Flow Name: {request.flow_api_name}
-        - Flow Label: {request.flow_label}
-        - Description: {request.flow_description}
-        - Flow Type: {getattr(request, 'flow_type', 'Screen Flow')}
-        
-        📖 USER STORY:
-        - Title: {request.user_story.title if request.user_story else 'None'}
-        - Priority: {request.user_story.priority if request.user_story else 'None'}
-        - Description: {request.user_story.description if request.user_story else 'None'}
-        
-        🔄 RETRY CONTEXT:
-        """
-        
-        if request.retry_context:
-            retry_context = request.retry_context
-            error_analysis = retry_context.get("error_analysis", {})
-            
-            input_context += f"""
-        - This was retry attempt #{retry_context.get('retry_attempt', 1)}
-        - Previous deployment error: {retry_context.get('deployment_error', 'Unknown')}
-        - Error type detected: {error_analysis.get('error_type', 'unknown')}
-        - Error severity: {error_analysis.get('severity', 'medium')}
-        - Required fixes attempted: {len(retry_context.get('specific_fixes_needed', []))}
-        - Error patterns to avoid: {', '.join(retry_context.get('common_patterns', []))}
-        """
-        else:
-            input_context += "- This was the initial attempt (no retry context)"
-        
-        # Create enhanced output context
-        if response.success:
-            output_context = f"""
-            ✅ SUCCESS - Flow building completed successfully
-            
-            📊 RESPONSE DETAILS:
-            - Flow XML generated successfully (length: {len(response.flow_xml) if response.flow_xml else 0} chars)
-            - Elements created: {response.elements_created}
-            - Variables created: {response.variables_created}
-            - Best practices applied: {response.best_practices_applied}
-            - Recommendations: {response.recommendations}
-            - Deployment notes: {response.deployment_notes}
-            
-            🎯 KEY SUCCESS FACTORS:
-            - Successfully generated {len(response.elements_created)} flow elements
-            - Applied {len(response.best_practices_applied)} best practices
-            - Provided {len(response.recommendations)} recommendations
-            """
-            
-            if request.retry_context:
-                output_context += f"""
-            
-            🔧 RETRY SUCCESS DETAILS:
-            - Successfully addressed deployment errors from previous attempt
-            - Applied structured error fixes and avoided error patterns
-            - Used memory context and failure learning effectively
-            """
-            
-            output_context += """
-            
-            💡 LESSONS LEARNED:
-            - This approach was successful and should be replicated for similar flows
-            - The XML structure and element naming worked correctly
-            - Business requirements were properly translated to flow logic
-            """
-        else:
-            output_context = f"""
-            ❌ FAILURE - Flow building failed
-            
-            🔍 ERROR DETAILS:
-            - Error message: {response.error_message}
-            - Validation errors: {len(response.validation_errors)} errors found
-            """
-            
-            if response.validation_errors:
-                output_context += "\n            - Specific validation issues:"
-                for i, error in enumerate(response.validation_errors[:3], 1):  # Show first 3
-                    output_context += f"\n              {i}. {error.error_type}: {error.error_message}"
-            
-            output_context += f"""
-            
-            ⚠️ FAILURE ANALYSIS:
-            - This attempt failed at the flow building stage (before deployment)
-            - The error occurred during XML generation or validation
-            - Future attempts should address the specific validation issues above
-            
-            🎓 LESSONS LEARNED:
-            - This approach failed and should be avoided in future attempts
-            - The error pattern indicates issues with: {response.error_message[:100]}...
-            - Consider alternative flow structures or element configurations
-            """
-            
-            if request.retry_context:
-                output_context += f"""
-            
-            🔄 RETRY FAILURE CONTEXT:
-            - This was retry attempt #{request.retry_context.get('retry_attempt', 1)}
-            - Previous deployment fixes may not have been sufficient
-            - Consider more fundamental changes to the flow structure
-            """
-        
-        # Save to memory with enhanced context
+        # Save to our custom memory system
         try:
-            # Strip trailing whitespace to avoid Anthropic API errors
-            cleaned_input = input_context.strip()
-            cleaned_output = output_context.strip()
-            
-            memory.save_context(
-                {"input": cleaned_input},
-                {"output": cleaned_output}
-            )
+            memory.add_attempt(attempt_data)
             logger.info(f"Saved enhanced attempt #{attempt_number} to memory for flow: {flow_api_name}")
         except Exception as e:
             logger.warning(f"Failed to save attempt to memory: {str(e)}")
+    
+    def _extract_validation_errors(self, validation_errors: List[Any]) -> List[Dict[str, str]]:
+        """Extract validation error information safely"""
+        extracted_errors = []
+        for error in validation_errors:
+            try:
+                if hasattr(error, 'error_type') and hasattr(error, 'error_message'):
+                    extracted_errors.append({
+                        "error_type": error.error_type,
+                        "error_message": error.error_message
+                    })
+                elif isinstance(error, dict):
+                    extracted_errors.append({
+                        "error_type": error.get('error_type', 'unknown'),
+                        "error_message": error.get('error_message', str(error))
+                    })
+                else:
+                    extracted_errors.append({
+                        "error_type": "unknown",
+                        "error_message": str(error)
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to extract validation error: {e}")
+                extracted_errors.append({
+                    "error_type": "extraction_error",
+                    "error_message": str(error)
+                })
+        return extracted_errors
     
     def _get_memory_context(self, flow_api_name: str) -> str:
         """Get conversation history from memory for context"""
         memory = self._get_flow_memory(flow_api_name)
         
         try:
-            memory_vars = memory.load_memory_variables({})
-            conversation_history = memory_vars.get("conversation_history", "")
-            
-            if conversation_history:
-                if isinstance(conversation_history, list):
-                    # Convert message list to string
-                    history_text = "\n".join([
-                        f"{msg.type.title()}: {msg.content}" 
-                        for msg in conversation_history
-                    ])
-                else:
-                    history_text = str(conversation_history)
-                
-                return f"""
-                Previous Flow Building Attempts and Context:
-                
-                {history_text}
-                
-                Use this context to understand what has been tried before and build upon previous attempts.
-                Avoid repeating approaches that failed and incorporate successful patterns.
-                """
-            else:
-                return "No previous attempts found for this flow."
+            return memory.get_memory_context()
         except Exception as e:
             logger.warning(f"Failed to load memory context: {str(e)}")
             return "Unable to load previous attempt context."
@@ -268,7 +332,7 @@ class EnhancedFlowBuilderAgent:
     def clear_flow_memory(self, flow_api_name: str) -> None:
         """Clear memory for a specific flow (useful for starting fresh)"""
         if flow_api_name in self._flow_memories:
-            self._flow_memories[flow_api_name].clear()
+            self._flow_memories[flow_api_name] = FlowBuildingMemory()
             logger.info(f"Cleared memory for flow: {flow_api_name}")
     
     def analyze_requirements(self, request: FlowBuildRequest) -> Dict[str, Any]:
@@ -366,16 +430,60 @@ class EnhancedFlowBuilderAgent:
         return ""
 
     def retrieve_knowledge(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Retrieve relevant knowledge from RAG sources"""
+        """Retrieve relevant knowledge from RAG sources including Lightning Flow Scanner best practices"""
         
         knowledge = {
             "best_practices": [],
             "sample_flows": [],
             "patterns": [],
-            "troubleshooting": []
+            "troubleshooting": [],
+            "lightning_flow_scanner_guidance": {},
+            "scanner_rules": []
         }
         
         try:
+            # PROACTIVE: Get Lightning Flow Scanner guidance BEFORE generation
+            logger.info("Retrieving proactive Lightning Flow Scanner guidance")
+            
+            # Extract flow elements from analysis for more targeted guidance
+            flow_elements = []
+            for element in analysis.get("key_elements", []):
+                if element == "record_creation":
+                    flow_elements.append("Record Create")
+                elif element == "record_update":
+                    flow_elements.append("Record Update")
+                elif element == "email":
+                    flow_elements.append("Email Alert")
+                elif element == "conditional_logic":
+                    flow_elements.append("Decision")
+                elif element == "user_interaction":
+                    flow_elements.append("Screen")
+                elif element == "loops":
+                    flow_elements.append("Loop")
+                elif element == "approval":
+                    flow_elements.append("Submit for Approval")
+            
+            # Get comprehensive proactive guidance
+            scanner_guidance = get_proactive_flow_guidance.invoke({
+                "flow_requirements": " ".join(analysis["search_queries"]),
+                "flow_elements": flow_elements
+            })
+            
+            if scanner_guidance.get("success"):
+                knowledge["lightning_flow_scanner_guidance"] = scanner_guidance["guidance"]
+                logger.info(f"Retrieved Lightning Flow Scanner guidance: {scanner_guidance['total_recommendations']} recommendations")
+            else:
+                logger.warning(f"Failed to get Lightning Flow Scanner guidance: {scanner_guidance.get('message', 'Unknown error')}")
+            
+            # Search for specific scanner rules relevant to the flow type
+            for search_term in ["naming convention", "fault path", "performance", "unused variable"]:
+                scanner_rules = search_flow_scanner_rules.invoke({
+                    "query": search_term,
+                    "max_results": 2
+                })
+                knowledge["scanner_rules"].extend(scanner_rules)
+            
+            # Original RAG knowledge retrieval
             # Search for best practices
             for query in analysis["search_queries"]:
                 docs = search_flow_knowledge_base.invoke({
@@ -410,9 +518,10 @@ class EnhancedFlowBuilderAgent:
             })
             knowledge["troubleshooting"] = troubleshooting_docs
             
-            logger.info(f"Retrieved knowledge: {len(knowledge['best_practices'])} best practices, "
+            logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
                        f"{len(knowledge['sample_flows'])} sample flows, "
-                       f"{len(knowledge['patterns'])} patterns")
+                       f"{len(knowledge['patterns'])} patterns, "
+                       f"{len(knowledge['scanner_rules'])} scanner rules")
             
         except Exception as e:
             logger.error(f"Error retrieving knowledge: {str(e)}")
@@ -421,7 +530,9 @@ class EnhancedFlowBuilderAgent:
                 "best_practices": [],
                 "sample_flows": [],
                 "patterns": [],
-                "troubleshooting": []
+                "troubleshooting": [],
+                "lightning_flow_scanner_guidance": {},
+                "scanner_rules": []
             }
         
         return knowledge
@@ -481,11 +592,94 @@ class EnhancedFlowBuilderAgent:
                     ""
                 ])
         
-        # Add best practices context
+        # Add Lightning Flow Scanner best practices (PROACTIVE GUIDANCE)
+        scanner_guidance = knowledge.get("lightning_flow_scanner_guidance", {})
+        if scanner_guidance:
+            prompt_parts.extend([
+                "🔍 LIGHTNING FLOW SCANNER BEST PRACTICES (APPLY DURING GENERATION):",
+                "The following are industry-standard best practices from Lightning Flow Scanner.",
+                "CRITICAL: Apply these proactively while building the flow, not reactively after validation.",
+                ""
+            ])
+            
+            # General best practices
+            if scanner_guidance.get("general_best_practices"):
+                prompt_parts.append("📋 GENERAL BEST PRACTICES:")
+                for practice in scanner_guidance["general_best_practices"][:3]:
+                    rule_name = practice.get("rule_name", "Unknown")
+                    severity = practice.get("severity", "unknown")
+                    prompt_parts.append(f"   • [{severity.upper()}] {rule_name}")
+                    # Include brief content excerpt
+                    content = practice.get("content", "")
+                    if content and len(content) > 50:
+                        excerpt = content[:200] + "..." if len(content) > 200 else content
+                        prompt_parts.append(f"     {excerpt}")
+                prompt_parts.append("")
+            
+            # Naming conventions
+            if scanner_guidance.get("naming_conventions"):
+                prompt_parts.append("📝 NAMING CONVENTIONS:")
+                for convention in scanner_guidance["naming_conventions"][:2]:
+                    rule_name = convention.get("rule_name", "Unknown")
+                    prompt_parts.append(f"   • {rule_name}")
+                    content = convention.get("content", "")
+                    if content and len(content) > 50:
+                        excerpt = content[:150] + "..." if len(content) > 150 else content
+                        prompt_parts.append(f"     {excerpt}")
+                prompt_parts.append("")
+            
+            # Error handling guidance
+            if scanner_guidance.get("error_handling_guidance"):
+                prompt_parts.append("🛠️ ERROR HANDLING REQUIREMENTS:")
+                for guidance in scanner_guidance["error_handling_guidance"][:2]:
+                    rule_name = guidance.get("rule_name", "Unknown")
+                    severity = guidance.get("severity", "unknown")
+                    prompt_parts.append(f"   • [{severity.upper()}] {rule_name}")
+                    content = guidance.get("content", "")
+                    if content and len(content) > 50:
+                        excerpt = content[:150] + "..." if len(content) > 150 else content
+                        prompt_parts.append(f"     {excerpt}")
+                prompt_parts.append("")
+            
+            # Performance recommendations
+            if scanner_guidance.get("performance_recommendations"):
+                prompt_parts.append("⚡ PERFORMANCE REQUIREMENTS:")
+                for perf in scanner_guidance["performance_recommendations"][:2]:
+                    rule_name = perf.get("rule_name", "Unknown")
+                    prompt_parts.append(f"   • {rule_name}")
+                    content = perf.get("content", "")
+                    if content and len(content) > 50:
+                        excerpt = content[:150] + "..." if len(content) > 150 else content
+                        prompt_parts.append(f"     {excerpt}")
+                prompt_parts.append("")
+            
+            # Element-specific guidance
+            if scanner_guidance.get("element_specific_guidance"):
+                prompt_parts.append("🔧 ELEMENT-SPECIFIC BEST PRACTICES:")
+                for element_guide in scanner_guidance["element_specific_guidance"][:3]:
+                    element = element_guide.get("element", "Unknown")
+                    prompt_parts.append(f"   {element} Element:")
+                    for guide in element_guide.get("guidance", [])[:2]:
+                        rule_name = guide.get("rule_name", "Unknown")
+                        prompt_parts.append(f"     • {rule_name}")
+                        content = guide.get("content", "")
+                        if content and len(content) > 50:
+                            excerpt = content[:120] + "..." if len(content) > 120 else content
+                            prompt_parts.append(f"       {excerpt}")
+                prompt_parts.append("")
+            
+            prompt_parts.extend([
+                "🎯 CRITICAL: These are NOT suggestions - they are REQUIREMENTS for industry-standard flow quality.",
+                "Apply ALL relevant best practices as you build the flow. This proactive approach will ensure",
+                "the flow passes validation on the first attempt and meets enterprise standards.",
+                ""
+            ])
+
+        # Add best practices from general RAG
         if knowledge.get("best_practices"):
-            prompt_parts.append("RELEVANT BEST PRACTICES:")
-            for i, doc in enumerate(knowledge["best_practices"][:3], 1):
-                prompt_parts.append(f"{i}. {doc['content'][:500]}...")
+            prompt_parts.append("SALESFORCE FLOW BEST PRACTICES:")
+            for doc in knowledge["best_practices"][:3]:
+                prompt_parts.append(f"- {doc['content'][:200]}...")
             prompt_parts.append("")
         
         # Add sample flow context
@@ -1075,22 +1269,28 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
                 print("📝 INITIAL ATTEMPT: Using unified RAG approach")
                 print("🧠 MEMORY: Starting fresh memory tracking for this flow")
             
+            # Load persisted memory data from state
+            persisted_memory_data = state.get("flow_builder_memory_data", {})
+            
             # Initialize the enhanced agent with persistent memory
-            # Note: In a production system, you'd want to persist this agent instance
-            # across calls to maintain memory. For now, we create it fresh each time
-            # but the memory will be saved within the agent's _flow_memories dict
-            agent = EnhancedFlowBuilderAgent(llm)
+            agent = EnhancedFlowBuilderAgent(llm, persisted_memory_data)
             
             # Check if we have memory context for this flow
             memory_context = agent._get_memory_context(flow_build_request.flow_api_name)
             if memory_context and "No previous attempts found" not in memory_context:
-                print("🧠 MEMORY: Found previous attempt context")
+                print("🧠 MEMORY: Found previous attempt context - using it for retry")
+                print(f"🔍 MEMORY: Previous attempts will inform this retry attempt")
             else:
                 print("🧠 MEMORY: No previous attempts found for this flow")
             
             # Use the unified RAG approach for all scenarios
             # The method automatically handles user story, RAG knowledge, memory context, and optional retry context
             flow_response = agent.generate_flow_with_rag(flow_build_request)
+            
+            # Save updated memory data back to state for persistence
+            updated_memory_data = agent.get_memory_data_for_persistence()
+            response_updates["flow_builder_memory_data"] = updated_memory_data
+            print(f"🧠 MEMORY: Persisted memory data for {len(updated_memory_data)} flows")
             
             # Convert response to dict for state storage
             response_updates["current_flow_build_response"] = flow_response.model_dump()
