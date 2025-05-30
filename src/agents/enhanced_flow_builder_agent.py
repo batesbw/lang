@@ -38,6 +38,11 @@ class FlowBuildingMemory:
     
     def add_attempt(self, attempt_data: Dict[str, Any]) -> None:
         """Add a new attempt and extract patterns"""
+        # Check if this attempt number already exists and remove it (deduplication)
+        attempt_num = attempt_data.get('retry_attempt', 1)
+        self.attempts = [a for a in self.attempts if a.get('retry_attempt', 1) != attempt_num]
+        
+        # Now add the new attempt
         self.attempts.append(attempt_data)
         
         # Extract patterns based on success/failure
@@ -59,10 +64,17 @@ class FlowBuildingMemory:
             if attempt_data.get('retry_attempt', 1) > 1:
                 self.key_insights.append(f"Retry attempt #{attempt_data['retry_attempt']} succeeded - this approach should be preserved")
         else:
-            # Extract failed patterns
+            # Extract failed patterns with more detail
             error_msg = attempt_data.get('error_message', '')
             if error_msg:
-                self.failed_patterns.append(f"Failed approach: {error_msg[:100]}")
+                self.failed_patterns.append(f"Failed approach: {error_msg}")
+            
+            # CRITICAL: Extract specific validation errors as failed patterns
+            validation_errors = attempt_data.get('validation_errors', [])
+            for error in validation_errors[:3]:  # Track top 3 validation errors
+                error_type = error.get('error_type', 'unknown')
+                error_msg = error.get('error_message', '')[:80]
+                self.failed_patterns.append(f"Validation error: {error_type} - {error_msg}")
         
         # Limit memory size
         if len(self.attempts) > self.max_attempts:
@@ -120,15 +132,26 @@ class FlowBuildingMemory:
                     context_parts.append(f"    - Applied {len(attempt['best_practices_applied'])} best practices")
                 context_parts.append(f"    - THIS APPROACH WORKED - PRESERVE IT!")
             else:
-                error_msg = attempt.get('error_message', 'Unknown error')[:80]
+                error_msg = attempt.get('error_message', 'Unknown error')
                 context_parts.append(f"  Attempt #{attempt_num}: {status} - {error_msg}")
+                
+                # CRITICAL FIX: Include specific validation errors!
+                validation_errors = attempt.get('validation_errors', [])
+                if validation_errors:
+                    context_parts.append(f"    Specific errors that caused failure:")
+                    for i, error in enumerate(validation_errors[:5], 1):  # Show up to 5 errors
+                        error_type = error.get('error_type', 'unknown')
+                        error_msg = error.get('error_message', 'No details')[:100]
+                        context_parts.append(f"      {i}. {error_type}: {error_msg}")
+                    if len(validation_errors) > 5:
+                        context_parts.append(f"      ... and {len(validation_errors) - 5} more errors")
         
         context_parts.append("")
         
-        # Add patterns to avoid
+        # Add patterns to avoid WITH SPECIFIC DETAILS
         if self.failed_patterns:
-            context_parts.append("⚠️ PATTERNS TO AVOID:")
-            for pattern in self.failed_patterns[-3:]:  # Last 3 failed patterns
+            context_parts.append("⚠️ PATTERNS TO AVOID (from failed attempts):")
+            for pattern in self.failed_patterns[-5:]:  # Last 5 failed patterns
                 context_parts.append(f"  ❌ {pattern}")
             context_parts.append("")
         
@@ -138,6 +161,7 @@ class FlowBuildingMemory:
             "If a previous attempt succeeded (marked with ✅), you MUST build upon that success.",
             "Do NOT revert to approaches that already failed. Preserve successful patterns.",
             "Each retry should be BETTER than the last successful attempt, not worse.",
+            "LEARN from the specific errors listed above - do not repeat them!",
             ""
         ])
         
@@ -1250,11 +1274,16 @@ FAILURE LEARNING:
         memory = self._get_flow_memory(flow_api_name)
         
         try:
+            # Log current memory state for debugging
+            logger.info(f"Updating memory for flow {flow_api_name}, attempt #{attempt_number}")
+            logger.info(f"Current memory has {len(memory.attempts)} attempts")
+            
             # Find the most recent attempt with matching attempt number
             target_attempt = None
-            for attempt in reversed(memory.attempts):
+            for i, attempt in enumerate(reversed(memory.attempts)):
                 if attempt.get('retry_attempt') == attempt_number:
                     target_attempt = attempt
+                    logger.info(f"Found matching attempt at index {len(memory.attempts) - i - 1}")
                     break
             
             if target_attempt:
@@ -1264,9 +1293,17 @@ FAILURE LEARNING:
                 
                 # Add validation error details if failed
                 if not validation_passed and validation_errors:
-                    target_attempt['validation_errors'] = self._extract_validation_errors(validation_errors)
+                    target_attempt['validation_errors'] = validation_errors  # Already extracted properly
                     if not target_attempt.get('error_message'):
                         target_attempt['error_message'] = f"Flow validation failed with {len(validation_errors)} errors"
+                    
+                    # Also update failed patterns with validation errors
+                    for error in validation_errors[:3]:
+                        error_type = error.get('error_type', 'unknown')
+                        error_msg = error.get('error_message', '')[:80]
+                        pattern = f"Validation error: {error_type} - {error_msg}"
+                        if pattern not in memory.failed_patterns:
+                            memory.failed_patterns.append(pattern)
                 
                 # Re-extract patterns since success status changed
                 if old_success != validation_passed:
@@ -1280,6 +1317,12 @@ FAILURE LEARNING:
                 
                 status_msg = "SUCCESS" if validation_passed else "FAILED"
                 logger.info(f"Updated memory attempt #{attempt_number} with validation result ({status_msg}) for flow: {flow_api_name}")
+                
+                # Log validation errors for debugging
+                if validation_errors:
+                    logger.info(f"Stored {len(validation_errors)} validation errors in memory")
+                    for error in validation_errors[:3]:
+                        logger.debug(f"  - {error.get('error_type', 'unknown')}: {error.get('error_message', 'no message')[:60]}")
             else:
                 logger.warning(f"Could not find attempt #{attempt_number} in memory to update with validation result")
                 

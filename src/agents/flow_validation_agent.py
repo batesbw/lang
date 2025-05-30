@@ -362,7 +362,18 @@ def run_flow_validation_agent(state: AgentWorkforceState, llm: BaseLanguageModel
                 
                 # Update memory with validation results
                 validation_passed = validation_response.is_valid
-                validation_errors = validation_response.errors if hasattr(validation_response, 'errors') else []
+                validation_errors = []
+                
+                # Extract validation errors with proper structure
+                if hasattr(validation_response, 'errors') and validation_response.errors:
+                    for error in validation_response.errors:
+                        validation_errors.append({
+                            'error_type': error.rule_name,
+                            'error_message': error.message,
+                            'location': error.location,
+                            'severity': error.severity,
+                            'fix_suggestion': error.fix_suggestion
+                        })
                 
                 temp_agent.update_memory_with_validation_result(
                     flow_api_name=flow_build_response.input_request.flow_api_name,
