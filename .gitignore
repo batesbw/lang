@@ -240,3 +240,7 @@ logs/
 *.log 
 # JWT Bearer Flow certificates (keep private!)
 certs/
+.langgraph_api/.langgraph_checkpoint.1.pckl
+.langgraph_api/.langgraph_checkpoint.2.pckl
+.langgraph_api/.langgraph_checkpoint.3.pckl
+.langgraph_api/.langgraph_ops.pckl

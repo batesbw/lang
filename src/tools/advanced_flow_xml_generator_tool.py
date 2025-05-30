@@ -195,7 +195,7 @@ class AdvancedFlowXmlGeneratorTool(BaseTool):
         
         # Add status
         status_el = ET.SubElement(flow_el, "status")
-        status_el.text = "Draft"  # Always create as draft initially
+        status_el.text = "Active"  # Always create as Active for immediate deployment
         
         # Convert to pretty XML string
         xml_string = ET.tostring(flow_el, encoding='unicode', xml_declaration=True)
@@ -544,7 +544,7 @@ class AdvancedFlowXmlGeneratorTool(BaseTool):
     def _get_best_practices_applied(self, request: FlowBuildRequest) -> List[str]:
         """Get list of best practices that were automatically applied"""
         practices = [
-            "Flow created as Draft status for safe deployment",
+            "Flow created as Active status for immediate deployment",
             "Proper XML namespace and API version applied",
             "Standard process metadata values included",
             "Consistent element positioning and naming"
@@ -596,10 +596,10 @@ class AdvancedFlowXmlGeneratorTool(BaseTool):
         """Get deployment notes"""
         notes = []
         
-        notes.append("Flow is created in Draft status and must be activated after deployment.")
+        notes.append("Flow is created in Active status and ready for immediate use.")
         
         if request.flow_type == FlowType.RECORD_TRIGGERED:
-            notes.append("Test thoroughly in sandbox before activating in production.")
+            notes.append("Test thoroughly in sandbox before deploying to production.")
             notes.append("Consider the impact on existing automation and order of execution.")
         
         if request.flow_type == FlowType.SCREEN_FLOW:

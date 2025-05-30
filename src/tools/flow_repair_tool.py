@@ -233,15 +233,15 @@ class FlowRepairTool(BaseTool):
                 api_version.text = "59.0"
                 repairs.append("Updated API version to 59.0 for better flow support")
             
-            # Ensure status is set to Draft for new deployments
+            # Ensure status is set to Active for deployments
             status = root.find("status")
             if status is None:
                 status = ET.SubElement(root, "status")
-                status.text = "Draft"
-                repairs.append("Set flow status to Draft for safe deployment")
-            elif status.text == "Active":
-                status.text = "Draft"
-                repairs.append("Changed status from Active to Draft for deployment")
+                status.text = "Active"
+                repairs.append("Set flow status to Active for deployment")
+            elif status.text == "Draft":
+                status.text = "Active"
+                repairs.append("Changed status from Draft to Active for deployment")
             
             return {"success": True, "repairs": repairs, "issues": issues}
             
@@ -260,22 +260,24 @@ class FlowRepairTool(BaseTool):
         issues = []
         
         try:
-            # Set status to Draft
+            # Set status to Active
             status = root.find("status")
             if status is not None:
-                status.text = "Draft"
-                repairs.append("Set flow status to Draft to avoid overwrite issues")
+                status.text = "Active"
+                repairs.append("Set flow status to Active for deployment")
             
             # Add note about flow definition management
             description = root.find("description")
             if description is None:
                 description = ET.SubElement(root, "description")
-                description.text = "Flow deployed as Draft. Use FlowDefinition to activate."
+                description.text = "Flow deployed as Active and ready for use."
             else:
-                if "FlowDefinition" not in description.text:
-                    description.text += " Use FlowDefinition to activate."
+                if "FlowDefinition" in description.text:
+                    description.text = description.text.replace("Flow deployed as Draft. Use FlowDefinition to activate.", "Flow deployed as Active and ready for use.")
+                else:
+                    description.text += " Flow deployed as Active and ready for use."
             
-            repairs.append("Added note about using FlowDefinition for activation")
+            repairs.append("Updated flow description for Active deployment")
             
             return {"success": True, "repairs": repairs, "issues": issues}
             
@@ -396,7 +398,7 @@ class FlowRepairTool(BaseTool):
                 "apiVersion": "59.0",
                 "label": "Generated Flow",
                 "processType": "Flow",
-                "status": "Draft"
+                "status": "Active"
             }
             
             for elem_name, default_value in required_elements.items():

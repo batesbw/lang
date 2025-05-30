@@ -153,6 +153,10 @@ class BasicFlowXmlGeneratorTool(BaseTool):
             start_location_y_el = ET.SubElement(start_el, "locationY")
             start_location_y_el.text = "0"
             
+            # status element - set to Active for immediate deployment
+            status_el = ET.SubElement(flow_el, "status")
+            status_el.text = "Active"
+            
             # Convert the ET to a string
             xml_string = ET.tostring(flow_el, encoding='unicode', xml_declaration=True)
             

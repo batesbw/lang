@@ -775,13 +775,14 @@ CRITICAL INSTRUCTIONS:
 1. Always respond with ONLY the Flow XML - no explanations, markdown, comments or other text
 2. Generate complete, valid Salesforce Flow XML that can be deployed immediately
 3. Include all required elements: apiVersion, label, processType, status, etc.
-4. For retry attempts, carefully analyze the previous error and fix the specific issues
-5. Use proper Salesforce Flow XML namespace: http://soap.sforce.com/2006/04/metadata
-6. Record Triggered Flows can't combine Create/Update AND Delete operations in the same flow. A separate flow is required for the Delete operation.
-7. Include processMetadataValues for proper Flow Builder support
-8. Ensure all API names are valid (alphanumeric, start with letter, no spaces/hyphens)
-9. Start your response immediately with <?xml or <Flow - no other text
-10. End your response immediately after </Flow> - no other text
+4. ALWAYS set the Flow status to 'Active' - use <status>Active</status> in your XML
+5. For retry attempts, carefully analyze the previous error and fix the specific issues
+6. Use proper Salesforce Flow XML namespace: http://soap.sforce.com/2006/04/metadata
+7. Record Triggered Flows can't combine Create/Update AND Delete operations in the same flow. A separate flow is required for the Delete operation.
+8. Include processMetadataValues for proper Flow Builder support
+9. Ensure all API names are valid (alphanumeric, start with letter, no spaces/hyphens)
+10. Start your response immediately with <?xml or <Flow - no other text
+11. End your response immediately after </Flow> - no other text
 
 RESPONSE FORMAT:
 Your response must be pure XML that starts with either:
@@ -791,6 +792,11 @@ Your response must be pure XML that starts with either:
 OR just:
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
 ...
+
+FLOW STATUS REQUIREMENT:
+ALWAYS set the Flow status to 'Active' - use <status>Active</status> in your XML
+NEVER use <status>Draft</status> - ALWAYS use <status>Active</status>
+ALWAYS include <status>Active</status> in your Flow XML to deploy the Flow in an active state.
 
 COMMON DEPLOYMENT FIXES:
 - API names must be alphanumeric and start with a letter

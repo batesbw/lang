@@ -3,7 +3,7 @@
     <apiVersion>50.0</apiVersion>
     <label>Copy_1_Of_BadFlow</label>
     <processType>Flow</processType>
-    <status>Draft</status>
+    <status>Active</status>
     <start>
         <locationX>176</locationX>
         <locationY>0</locationY>
