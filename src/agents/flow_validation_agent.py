@@ -173,30 +173,87 @@ class FlowValidationAgent:
         """Generate specific fix instructions for validation errors"""
         instructions = []
         
-        # Prioritize fixes by impact and difficulty
+        # Enhanced, specific fix instructions for each rule
         priority_rules = {
+            # Performance Issues (Critical)
             "DMLStatementInLoop": "CRITICAL: Move all record create/update/delete operations outside of loop elements",
             "SOQLQueryInLoop": "CRITICAL: Move all Get Records operations outside of loop elements", 
+            "ActionCallsInLoop": "CRITICAL: Move all action calls outside of loop elements",
+            
+            # Hardcoded Values (High Priority)
             "HardcodedId": "HIGH: Replace hardcoded record IDs with variables or dynamic lookups",
-            "MissingFaultPath": "HIGH: Add fault connectors to critical operations (Get Records, DML operations)",
-            "UnconnectedElement": "MEDIUM: Remove unconnected flow elements or connect them to the main flow path",
-            "MissingNullHandler": "MEDIUM: Add decision elements to check for null values after Get Records operations",
-            "CopyAPIName": "LOW: Update element API names to be descriptive and unique",
-            "FlowName": "LOW: Update flow name to follow naming conventions",
-            "APIVersion": "LOW: Update flow API version to latest (59.0 or higher)"
+            "HardcodedUrl": "HIGH: Replace hardcoded URLs with custom labels or variables",
+            
+            # Error Handling (High Priority)
+            "MissingFaultPath": "HIGH: Add fault connectors to ALL Get Records, Create Records, Update Records, and Delete Records elements. Connect fault paths to assignment elements or screen elements that handle errors gracefully.",
+            
+            # Flow Structure (Medium Priority)
+            "UnconnectedElement": "MEDIUM: Remove unconnected flow elements or connect them to the main flow path using connectors",
+            "MissingNullHandler": "MEDIUM: Add decision elements to check for null values after Get Records operations before using the results",
+            "UnsafeRunningContext": "MEDIUM: Review flow trigger conditions and ensure proper user context",
+            
+            # Naming and Conventions (Medium Priority)
+            "CopyAPIName": "MEDIUM: Update element API names to be descriptive and unique (no 'myVariable_X' or 'CopyOfElement' names)",
+            "FlowName": "MEDIUM: Update flow label to follow naming convention: Domain_Description format (e.g., 'Sales_AccountContactCounter')",
+            "FlowDescription": "MEDIUM: Add a clear, descriptive flow description that explains the business purpose",
+            
+            # Flow Status (Medium Priority) 
+            "FlowStatus": "MEDIUM: Set flow status to 'Active' instead of 'Draft' by changing <status>Draft</status> to <status>Active</status>",
+            "InactiveFlow": "MEDIUM: Set flow status to 'Active' instead of 'Draft' by changing <status>Draft</status> to <status>Active</status>",
+            
+            # API Compatibility (Low Priority)
+            "APIVersion": "LOW: Update flow API version to latest (60.0 or higher) by changing <apiVersion>XX.0</apiVersion> to <apiVersion>60.0</apiVersion>",
+            "AutoLayout": "LOW: Ensure flow elements have proper positioning for Flow Builder",
+            
+            # Lightning Flow Scanner Specific Rules (based on common error messages)
+            "Flow Naming Convention": "MEDIUM: Change flow label to follow Domain_Description format. Update <label>YourFlowName</label> to something like <label>Sales_AccountContactCounter</label>",
+            "Inactive Flow": "MEDIUM: Activate the flow by changing <status>Draft</status> to <status>Active</status> in the Flow XML",
+            "Missing Fault Path": "HIGH: Add fault connectors to ALL data operations. For each <recordLookups>, <recordCreates>, <recordUpdates>, add a <faultConnector> element that connects to error handling logic.",
+            "Unconnected Element": "MEDIUM: Ensure all flow elements are connected. Add <connector> elements between flow elements or remove unused elements.",
+            "Hardcoded ID": "HIGH: Replace any hardcoded Salesforce IDs (15 or 18 character strings) with variables or Get Records operations",
+            "DML Statement in Loop": "CRITICAL: Move Create/Update/Delete Records elements outside of Loop elements. Use collection variables instead.",
+            "SOQL Query in Loop": "CRITICAL: Move Get Records elements outside of Loop elements. Query all records first, then loop through the collection."
         }
         
         # Add specific instructions for found errors
         for error in errors:
-            if error.rule_name in priority_rules:
-                instructions.append(priority_rules[error.rule_name])
+            rule_name = error.rule_name
+            error_message = error.message or ""
+            
+            # Try exact match first
+            if rule_name in priority_rules:
+                instructions.append(f"FIX {rule_name}: {priority_rules[rule_name]}")
+            # Try partial match for Lightning Flow Scanner rule descriptions
+            elif any(key.lower() in rule_name.lower() for key in priority_rules.keys()):
+                matching_key = next(key for key in priority_rules.keys() if key.lower() in rule_name.lower())
+                instructions.append(f"FIX {rule_name}: {priority_rules[matching_key]}")
+            # Try partial match in error message
+            elif any(key.lower() in error_message.lower() for key in priority_rules.keys()):
+                matching_key = next(key for key in priority_rules.keys() if key.lower() in error_message.lower())
+                instructions.append(f"FIX {rule_name}: {priority_rules[matching_key]}")
             else:
-                fix_suggestion = error.fix_suggestion or f"Review and fix the {error.rule_name} violation"
-                instructions.append(f"Fix {error.rule_name}: {fix_suggestion}")
+                # Generic fix with more context
+                fix_suggestion = error.fix_suggestion or "Review the validation error details"
+                instructions.append(f"FIX {rule_name}: {fix_suggestion}. Error details: {error_message}")
         
-        # Add general guidance
+        # Add specific guidance based on error patterns
+        error_names = [error.rule_name for error in errors]
+        
+        if any("naming" in name.lower() or "name" in name.lower() for name in error_names):
+            instructions.append("NAMING GUIDANCE: Use Domain_Description format for flow names (e.g., 'Sales_AccountContactCounter')")
+        
+        if any("inactive" in name.lower() or "status" in name.lower() for name in error_names):
+            instructions.append("STATUS GUIDANCE: Change <status>Draft</status> to <status>Active</status> to activate the flow")
+        
+        if any("fault" in name.lower() or "error" in name.lower() for name in error_names):
+            instructions.append("ERROR HANDLING GUIDANCE: Every Get Records, Create Records, Update Records, and Delete Records element MUST have a fault connector that handles failures")
+        
+        # Add priority guidance
         if len(errors) > 3:
-            instructions.append("Focus on fixing the most critical errors first (performance and structure issues)")
+            instructions.append("PRIORITY: Fix CRITICAL and HIGH priority errors first (performance and data operations)")
+        
+        # Add XML-specific guidance
+        instructions.append("XML IMPLEMENTATION: Make changes directly in the Flow XML structure - update element properties, add missing elements, or modify existing values as specified above")
         
         return instructions
     

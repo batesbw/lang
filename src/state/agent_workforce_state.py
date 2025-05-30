@@ -15,6 +15,7 @@ class AgentWorkforceState(TypedDict, total=False):
     # Flow Building related state
     current_flow_build_request: Optional[Dict[str, Any]]  # Serialized FlowBuildRequest
     current_flow_build_response: Optional[Dict[str, Any]]  # Serialized FlowBuildResponse
+    flow_builder_memory_data: Optional[Dict[str, Any]]  # Persistent memory data for enhanced flow builder
 
     # Flow Validation related state
     current_flow_validation_response: Optional[Dict[str, Any]]  # Serialized FlowValidationResponse
