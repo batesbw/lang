@@ -140,6 +140,29 @@ def should_continue_after_deployment(state: AgentWorkforceState) -> str:
     else:
         print(f"❌ Deployment failed (attempt #{build_deploy_retry_count + 1})")
         
+        # Enhanced deployment failure logging
+        if deployment_response:
+            error_message = deployment_response.get("error_message")
+            component_errors = deployment_response.get("component_errors", [])
+            
+            print("📋 DEPLOYMENT FAILURE DETAILS:")
+            if error_message:
+                print(f"   Main Error: {error_message}")
+            
+            if component_errors:
+                print("   🔍 Specific Component Problems:")
+                for i, error in enumerate(component_errors, 1):
+                    if isinstance(error, dict):
+                        component_type = error.get('componentType', 'Unknown')
+                        problem = error.get('problem', 'Unknown error')
+                        file_name = error.get('fileName', 'Unknown file')
+                        print(f"     {i}. [{component_type}] {problem}")
+                        print(f"        File: {file_name}")
+                    else:
+                        print(f"     {i}. {str(error)}")
+            else:
+                print("   No specific component error details available")
+        
         # Check if we should retry
         if build_deploy_retry_count < max_retries:
             print(f"🔄 Retrying build/deploy cycle ({build_deploy_retry_count + 1}/{max_retries})")
@@ -186,9 +209,6 @@ def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceStat
             
             print(f"🔄 Setting up enhanced retry #{current_retry_count} for flow: {original_request.flow_api_name}")
             
-            # Create retry request with enhanced failure context
-            retry_request = original_request.model_copy()
-            
             # Analyze the deployment error for specific fixes
             error_analysis = _analyze_deployment_error(
                 deployment_response.get("error_message", "Unknown error"),
@@ -197,6 +217,7 @@ def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceStat
             )
             
             # Enhanced retry context with structured analysis
+            retry_request = original_request.model_copy()
             retry_request.retry_context = {
                 "is_retry": True,
                 "retry_attempt": current_retry_count,
@@ -209,12 +230,41 @@ def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceStat
                 "previous_attempts_summary": _get_previous_attempts_summary(state, current_retry_count)
             }
             
+            # Enhanced failure analysis logging with complete visibility
             print(f"🔧 Enhanced failure analysis completed:")
-            print(f"   Primary error type: {error_analysis['error_type']}")
-            print(f"   Specific fixes needed: {len(error_analysis['required_fixes'])}")
-            print(f"   Error patterns detected: {len(error_analysis['error_patterns'])}")
-            for fix in error_analysis['required_fixes'][:3]:  # Show first 3 fixes
-                print(f"     - {fix}")
+            print(f"   📊 Error Classification:")
+            print(f"      Primary error type: {error_analysis['error_type']}")
+            print(f"      Severity level: {error_analysis['severity']}")
+            print(f"      Error patterns detected: {len(error_analysis['error_patterns'])}")
+            
+            if error_analysis['error_patterns']:
+                print(f"      Detected patterns: {', '.join(error_analysis['error_patterns'])}")
+            
+            # Show ALL required fixes, not just the first 3
+            fixes = error_analysis['required_fixes']
+            print(f"   🛠️  Required Fixes Identified: {len(fixes)}")
+            if fixes:
+                print(f"      How fixes were identified: Based on error pattern analysis and Salesforce Flow best practices")
+                for i, fix in enumerate(fixes, 1):
+                    print(f"      {i}. {fix}")
+            else:
+                print(f"      No specific fixes identified - using general guidance")
+            
+            # Show categorized issues if any
+            if error_analysis['api_name_issues']:
+                print(f"   🏷️  API Name Issues ({len(error_analysis['api_name_issues'])}):")
+                for issue in error_analysis['api_name_issues']:
+                    print(f"      - {issue}")
+            
+            if error_analysis['structural_issues']:
+                print(f"   🏗️  Structural Issues ({len(error_analysis['structural_issues'])}):")
+                for issue in error_analysis['structural_issues']:
+                    print(f"      - {issue}")
+            
+            if error_analysis['xml_issues']:
+                print(f"   📄 XML Issues ({len(error_analysis['xml_issues'])}):")
+                for issue in error_analysis['xml_issues']:
+                    print(f"      - {issue}")
             
             updated_state = state.copy()
             updated_state["current_flow_build_request"] = retry_request.model_dump()
@@ -251,8 +301,58 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
     
     error_text = error_message.lower() if error_message else ""
     
-    # Analyze error patterns
-    if "invalid name" in error_text or "api name" in error_text:
+    # Also check component errors for additional context
+    all_error_text = error_text
+    for error in component_errors:
+        if isinstance(error, dict):
+            problem = error.get("problem", "").lower()
+            all_error_text += " " + problem
+    
+    # Analyze specific Salesforce Flow deployment error patterns
+    
+    # Invalid flow element reference (like in the user's example) - Check both main error and component errors
+    if ("invalid flow element" in all_error_text or "unknown element" in all_error_text or 
+        "contains an invalid flow element" in all_error_text):
+        analysis["error_type"] = "invalid_flow_element_reference"
+        analysis["severity"] = "high"
+        analysis["structural_issues"].append("Flow contains references to non-existent elements")
+        analysis["required_fixes"].extend([
+            "Remove or fix references to invalid flow elements (e.g., Get_Contact_Count)",
+            "Ensure all element references point to actually defined elements in the flow",
+            "Check formula expressions for invalid element references",
+            "Verify that all flow elements are properly defined with correct names",
+            "Replace invalid element references with valid flow elements or variables"
+        ])
+        analysis["error_patterns"].append("INVALID_FLOW_ELEMENT_REFERENCE")
+    
+    # Formula expression errors
+    elif "formula expression is invalid" in all_error_text:
+        analysis["error_type"] = "invalid_formula_expression"
+        analysis["severity"] = "high"
+        analysis["structural_issues"].append("Invalid formula expressions detected")
+        analysis["required_fixes"].extend([
+            "Fix invalid formula expressions in flow elements",
+            "Ensure all referenced elements exist in the flow",
+            "Validate formula syntax and element references",
+            "Use proper Flow expression syntax for element references"
+        ])
+        analysis["error_patterns"].append("INVALID_FORMULA_EXPRESSION")
+    
+    # Field integrity exceptions (broader category)
+    elif "field integrity exception" in all_error_text:
+        analysis["error_type"] = "field_integrity_violation"
+        analysis["severity"] = "high"
+        analysis["structural_issues"].append("Field integrity constraints violated")
+        analysis["required_fixes"].extend([
+            "Fix field integrity violations in flow definitions",
+            "Ensure all field references are valid and accessible",
+            "Check for missing required fields or invalid field types",
+            "Validate flow element configurations against Salesforce schema"
+        ])
+        analysis["error_patterns"].append("FIELD_INTEGRITY_VIOLATION")
+    
+    # API Name validation errors
+    elif "invalid name" in all_error_text or "api name" in all_error_text:
         analysis["error_type"] = "api_name_validation"
         analysis["severity"] = "high"
         analysis["api_name_issues"].append("Invalid API name format detected")
@@ -263,7 +363,8 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
         ])
         analysis["error_patterns"].append("API_NAME_INVALID")
     
-    if "duplicate" in error_text and "element" in error_text:
+    # Duplicate element errors
+    elif "duplicate" in all_error_text and "element" in all_error_text:
         analysis["error_type"] = "duplicate_elements"
         analysis["severity"] = "high"
         analysis["structural_issues"].append("Duplicate element names detected")
@@ -274,7 +375,8 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
         ])
         analysis["error_patterns"].append("DUPLICATE_ELEMENTS")
     
-    if "element reference" in error_text or "target reference" in error_text:
+    # Element reference errors
+    elif "element reference" in all_error_text or "target reference" in all_error_text:
         analysis["error_type"] = "invalid_references"
         analysis["severity"] = "high"
         analysis["structural_issues"].append("Invalid element references")
@@ -285,7 +387,8 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
         ])
         analysis["error_patterns"].append("INVALID_REFERENCES")
     
-    if "required field" in error_text or "missing" in error_text:
+    # Missing required fields
+    elif "required field" in all_error_text or "missing" in all_error_text:
         analysis["error_type"] = "missing_required_fields"
         analysis["severity"] = "high"
         analysis["structural_issues"].append("Missing required fields or elements")
@@ -296,7 +399,8 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
         ])
         analysis["error_patterns"].append("MISSING_REQUIRED_FIELDS")
     
-    if "xml" in error_text or "malformed" in error_text or "syntax" in error_text:
+    # XML syntax errors
+    elif "xml" in all_error_text or "malformed" in all_error_text or "syntax" in all_error_text:
         analysis["error_type"] = "xml_syntax"
         analysis["severity"] = "critical"
         analysis["xml_issues"].append("XML syntax or structure issues")
@@ -318,6 +422,8 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
                     analysis["api_name_issues"].append(f"Flow component naming issue: {problem}")
                 elif "reference" in problem:
                     analysis["structural_issues"].append(f"Flow reference issue: {problem}")
+                elif "formula expression" in problem:
+                    analysis["structural_issues"].append(f"Formula expression issue: {problem}")
     
     # If no specific pattern detected, provide general guidance
     if analysis["error_type"] == "unknown":
@@ -355,10 +461,39 @@ def _get_previous_attempts_summary(state: AgentWorkforceState, current_retry: in
 
 def record_build_deploy_cycle(state: AgentWorkforceState) -> AgentWorkforceState:
     """
-    Node to record the current build/deploy cycle attempt in history - REMOVED for simplification.
+    Node to record the current build/deploy cycle attempt with enhanced failure details.
     """
-    print("\n=== RECORDING BUILD/DEPLOY CYCLE - SIMPLIFIED ===")
-    # Just pass through the state without complex tracking
+    print("\n=== RECORDING BUILD/DEPLOY CYCLE - ENHANCED ===")
+    
+    build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
+    max_retries = state.get("max_build_deploy_retries", MAX_BUILD_DEPLOY_RETRIES)
+    deployment_response = state.get("current_deployment_response")
+    
+    if deployment_response and not deployment_response.get("success"):
+        print(f"❌ Deployment failed (attempt #{build_deploy_retry_count})")
+        
+        # Show the specific reason for failure
+        error_message = deployment_response.get("error_message")
+        component_errors = deployment_response.get("component_errors", [])
+        
+        if error_message:
+            print(f"   📋 Failure Reason: {error_message}")
+        
+        if component_errors:
+            print(f"   🔍 Component Error Summary:")
+            for error in component_errors[:2]:  # Show first 2 errors to keep it concise
+                if isinstance(error, dict):
+                    problem = error.get('problem', 'Unknown error')
+                    # Truncate long error messages for summary
+                    if len(problem) > 80:
+                        problem = problem[:77] + "..."
+                    print(f"      - {problem}")
+        
+        if build_deploy_retry_count < max_retries:
+            print(f"🔄 Retrying build/deploy cycle ({build_deploy_retry_count + 1}/{max_retries})")
+        else:
+            print(f"🛑 Maximum retries ({max_retries}) will be reached - this may be the final attempt")
+    
     return state
 
 
