@@ -25,6 +25,49 @@ from ..state.agent_workforce_state import AgentWorkforceState
 
 logger = logging.getLogger(__name__)
 
+def _log_flow_error(error_type: str, flow_name: str, error_message: str, details: Optional[Dict[str, Any]] = None, retry_attempt: int = 1) -> None:
+    """Log Flow errors with improved formatting and readability"""
+    separator = "=" * 80
+    
+    logger.error(f"\n{separator}")
+    logger.error(f"🚨 FLOW ERROR: {error_type}")
+    logger.error(f"📋 Flow Name: {flow_name}")
+    logger.error(f"🔄 Attempt: #{retry_attempt}")
+    logger.error(f"❌ Error: {error_message}")
+    
+    if details:
+        logger.error("📊 Additional Details:")
+        for key, value in details.items():
+            if isinstance(value, (list, dict)):
+                logger.error(f"  {key}: {len(value)} items" if isinstance(value, list) else f"  {key}: {value}")
+            else:
+                logger.error(f"  {key}: {value}")
+    
+    logger.error(separator)
+
+def _log_flow_success(flow_name: str, details: Optional[Dict[str, Any]] = None, retry_attempt: int = 1) -> None:
+    """Log Flow success with improved formatting and readability"""
+    separator = "=" * 80
+    
+    logger.info(f"\n{separator}")
+    logger.info(f"✅ FLOW SUCCESS: {flow_name}")
+    logger.info(f"🔄 Attempt: #{retry_attempt}")
+    
+    if details:
+        logger.info("📊 Success Details:")
+        for key, value in details.items():
+            if isinstance(value, list):
+                logger.info(f"  {key}: {len(value)} items")
+                if value:  # Show first few items
+                    for item in value[:3]:
+                        logger.info(f"    - {item}")
+                    if len(value) > 3:
+                        logger.info(f"    ... and {len(value) - 3} more")
+            else:
+                logger.info(f"  {key}: {value}")
+    
+    logger.info(separator)
+
 class FlowBuildingMemory:
     """Custom memory system that preserves successful patterns and key improvements"""
     
@@ -867,14 +910,40 @@ FAILURE LEARNING:
                 # Save attempt to memory as "pending validation" - real success depends on validation
                 self._save_attempt_to_memory(request.flow_api_name, request, enhanced_response, retry_attempt, validation_passed=False)  # Mark as failed until validation confirms success
                 
-                logger.info(f"Successfully generated enhanced flow: {request.flow_api_name}")
+                # Use structured success logging
+                _log_flow_success(
+                    flow_name=request.flow_api_name,
+                    details={
+                        "elements_created": elements_created,
+                        "variables_created": variables_created,
+                        "best_practices": enhanced_best_practices,
+                        "xml_length": len(flow_xml),
+                        "use_case": analysis['primary_use_case'],
+                        "complexity": analysis['complexity_level']
+                    },
+                    retry_attempt=retry_attempt
+                )
+                
                 return enhanced_response
             else:
                 raise Exception("Failed to extract valid XML from LLM response")
                 
         except Exception as e:
             error_message = f"Enhanced FlowBuilderAgent error: {str(e)}"
-            logger.error(error_message)
+            
+            # Use structured error logging
+            _log_flow_error(
+                error_type="Flow Generation Error",
+                flow_name=request.flow_api_name,
+                error_message=str(e),
+                details={
+                    "flow_description": request.flow_description,
+                    "retry_context": "Yes" if request.retry_context else "No",
+                    "user_story": request.user_story.title if request.user_story else "None",
+                    "exception_type": type(e).__name__
+                },
+                retry_attempt=retry_attempt
+            )
             
             error_response = FlowBuildResponse(
                 success=False,
@@ -899,10 +968,22 @@ FAILURE LEARNING:
             
             # Check for truncated response (critical issue!)
             if content and not content.rstrip().endswith("</Flow>"):
-                logger.error("CRITICAL: LLM response appears to be truncated - does not end with </Flow>")
-                logger.error(f"Response ends with: ...{content[-100:]}")
+                error_details = {
+                    "response_length": len(content),
+                    "response_ending": content[-100:] if len(content) > 100 else content,
+                    "is_long_response": len(content) > 3000,
+                    "contains_flow_start": "<Flow" in content
+                }
+                
+                _log_flow_error(
+                    error_type="XML Extraction - Truncated Response",
+                    flow_name=request.flow_api_name,
+                    error_message="LLM response appears to be truncated - does not end with </Flow>",
+                    details=error_details
+                )
+                
                 if len(content) > 3000:  # If response is long but truncated
-                    logger.error("Response was long but still truncated - increase max_tokens!")
+                    logger.error("⚠️  Response was long but still truncated - consider increasing max_tokens!")
                 return None
             
             # Try different extraction methods
@@ -963,8 +1044,20 @@ FAILURE LEARNING:
                     logger.info("Extracted XML using Method 4 (from generic code block)")
             
             if not xml_content:
-                logger.error("No XML found in LLM response using any extraction method")
-                logger.error(f"Full LLM response: {content}")
+                error_details = {
+                    "response_length": len(content),
+                    "response_preview": content[:300],
+                    "contains_xml_declaration": "<?xml" in content,
+                    "contains_flow_tag": "<Flow" in content,
+                    "contains_code_blocks": "```" in content
+                }
+                
+                _log_flow_error(
+                    error_type="XML Extraction - No XML Found",
+                    flow_name=request.flow_api_name,
+                    error_message="No XML found in LLM response using any extraction method",
+                    details=error_details
+                )
                 return None
             
             # Validate XML structure
@@ -982,12 +1075,22 @@ FAILURE LEARNING:
                         logger.info("Successfully fixed and validated XML")
                         return fixed_xml
                     except ET.ParseError as fix_error:
-                        logger.error(f"Could not fix XML parsing errors: {fix_error}")
-                        logger.error(f"Failed XML content: {xml_content[:500]}...")
+                        error_details = {
+                            "original_parse_error": str(e),
+                            "fix_attempt_error": str(fix_error),
+                            "xml_length": len(xml_content),
+                            "xml_preview": xml_content[:500],
+                            "xml_has_declaration": xml_content.startswith("<?xml"),
+                            "xml_has_namespace": "xmlns=" in xml_content
+                        }
+                        
+                        _log_flow_error(
+                            error_type="XML Validation - Parse Error (Unfixable)",
+                            flow_name=request.flow_api_name,
+                            error_message=f"Could not fix XML parsing errors: {fix_error}",
+                            details=error_details
+                        )
                         return None
-                else:
-                    logger.error("Could not attempt XML fixes")
-                    return None
             
         except Exception as e:
             logger.error(f"Error extracting XML: {e}")
