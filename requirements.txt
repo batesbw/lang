@@ -17,4 +17,6 @@ vecs==0.4.0
 pgvector>=0.1.0,<0.2.0
 PyGithub==2.1.1
 # AI-powered web crawling for documentation
-crawl4ai>=0.2.0 
+crawl4ai>=0.2.0
+# Web search functionality
+tavily-python>=0.3.0,<1.0.0 

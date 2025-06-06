@@ -24,6 +24,10 @@ class AgentWorkforceState(TypedDict, total=False):
     current_deployment_request: Optional[Dict[str, Any]]  # Serialized DeploymentRequest
     current_deployment_response: Optional[Dict[str, Any]]  # Serialized DeploymentResponse
     
+    # Web Search related state
+    current_web_search_request: Optional[Dict[str, Any]]  # Serialized WebSearchAgentRequest
+    current_web_search_response: Optional[Dict[str, Any]]  # Serialized WebSearchAgentResponse
+    
     # Simple Retry Management
     build_deploy_retry_count: int  # Current retry attempt for build/deploy cycle
     max_build_deploy_retries: int  # Maximum allowed retries from environment
