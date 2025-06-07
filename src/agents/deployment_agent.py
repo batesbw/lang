@@ -11,7 +11,7 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
     Runs the Deployment Agent.
 
     This agent takes a DeploymentRequest from the state, uses the
-    SalesforceDeployerTool to deploy the Flow metadata to Salesforce,
+    SalesforceDeployerTool to deploy multiple metadata components to Salesforce,
     and updates the state with a DeploymentResponse.
     """
     print("----- DEPLOYMENT AGENT -----")
@@ -25,7 +25,12 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
             deployment_request = DeploymentRequest(**deployment_request_dict)
             
             print(f"Processing DeploymentRequest ID: {deployment_request.request_id}")
-            print(f"Flow Name to deploy: {deployment_request.flow_name}")
+            
+            # Display components to be deployed
+            component_info = []
+            for component in deployment_request.components:
+                component_info.append(f"{component.component_type}:{component.api_name}")
+            print(f"Components to deploy: {', '.join(component_info)}")
 
             tool = SalesforceDeployerTool()
             
@@ -33,13 +38,30 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
             deployment_response: DeploymentResponse = tool._run(deployment_request)
             
             if deployment_response.success:
-                print(f"Deployment successful for request ID: {deployment_request.request_id}, SF Deployment ID: {deployment_response.deployment_id}")
+                print(f"✅ Deployment successful for request ID: {deployment_request.request_id}")
+                print(f"   Salesforce Deployment ID: {deployment_response.deployment_id}")
+                print(f"   Components deployed: {deployment_response.successful_components}/{deployment_response.total_components}")
+                
+                if deployment_response.component_successes:
+                    print("   Successfully deployed components:")
+                    for success in deployment_response.component_successes:
+                        print(f"     - {success.get('fullName')} ({success.get('componentType')})")
+                        
             else:
-                print(f"Deployment failed for request ID: {deployment_request.request_id}. Status: {deployment_response.status}")
+                print(f"❌ Deployment failed for request ID: {deployment_request.request_id}")
+                print(f"   Status: {deployment_response.status}")
+                print(f"   Components failed: {deployment_response.failed_components}/{deployment_response.total_components}")
+                
                 if deployment_response.error_message:
-                    print(f"  Error: {deployment_response.error_message}")
+                    print(f"   Error: {deployment_response.error_message}")
+                    
                 if deployment_response.component_errors:
-                    print(f"  Component Errors: {deployment_response.component_errors}")
+                    print("   Component Errors:")
+                    for error in deployment_response.component_errors:
+                        component_name = error.get('fullName', 'Unknown')
+                        component_type = error.get('componentType', 'Unknown')
+                        problem = error.get('problem', 'Unknown error')
+                        print(f"     - {component_name} ({component_type}): {problem}")
 
             # Convert response to dict for state storage
             response_updates["current_deployment_response"] = deployment_response.model_dump()
@@ -56,7 +78,10 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
                 request_id=deployment_request_dict.get("request_id", "unknown"),
                 success=False,
                 status="Failed",
-                error_message=error_message
+                error_message=error_message,
+                total_components=len(deployment_request_dict.get("components", [])),
+                successful_components=0,
+                failed_components=len(deployment_request_dict.get("components", []))
             )
             response_updates["current_deployment_response"] = error_response.model_dump()
             response_updates["current_deployment_request"] = None # Clear the request

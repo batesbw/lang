@@ -46,18 +46,40 @@ Building an intelligent **multi-agent workforce** using LangChain, LangGraph, an
     - Generate test reports and provide feedback.
 - **Tools**: Salesforce API client (for Apex tests, REST callouts to run Flows), browser automation frameworks (e.g., Playwright, Selenium integrated with LangChain tools), LLMs for interpreting AC and generating test assertions.
 
+### 5. TestDesignerAgent
+- **Purpose**: Designs comprehensive Apex Test Classes to thoroughly test Flow functionality.
+- **Key Capabilities**:
+    - Analyze user stories and acceptance criteria to identify test scenarios.
+    - Generate Apex Test Classes with appropriate setup, execution, and assertion logic.
+    - Create test data setup and teardown methods.
+    - Design both positive and negative test cases based on business requirements.
+    - Ensure test coverage for all Flow paths and business logic.
+- **Tools**: Apex code generation utilities, Salesforce data model analysis tools, test pattern templates, LLMs for test scenario analysis.
+
+### 6. TestExecutorAgent
+- **Purpose**: Executes Apex tests and analyzes results for comprehensive test reporting.
+- **Key Capabilities**:
+    - Deploy and execute Apex Test Classes in Salesforce orgs.
+    - Monitor test execution progress and collect detailed results.
+    - Analyze test failures and provide diagnostic information.
+    - Generate comprehensive test reports with coverage metrics.
+    - Provide feedback to other agents for test-driven development iterations.
+- **Tools**: Salesforce Tooling API client, test execution monitoring tools, result analysis utilities, reporting frameworks.
+
 ## Orchestration with LangGraph
 
 LangGraph will be used to define and manage the workflows between these agents. A typical Flow creation workflow might look like:
 
-1.  **Input**: User provides Flow requirements and target org details.
+1.  **Input**: User provides Flow requirements, user stories, acceptance criteria, and target org details.
 2.  **`AuthenticationAgent`**: Obtains session for the target org.
 3.  **`FlowBuilderAgent`**: Generates initial Flow XML based on requirements.
 4.  **`DeploymentAgent`**: Attempts to deploy the Flow using the session from `AuthenticationAgent`.
     - **If deployment fails**: Feedback (error messages) is routed back to `FlowBuilderAgent` for repair. Loop until successful deployment or max retries.
-5.  **`FlowTestAgent`**: (If deployment successful) Executes tests against the deployed Flow.
-    - **If tests fail**: Feedback (failed assertions, logs) is routed back to `FlowBuilderAgent` for repair. Loop through build-deploy-test cycle.
-6.  **Output**: Successfully deployed and tested Flow, or a report of issues if the process cannot be completed.
+5.  **`TestDesignerAgent`**: (If deployment successful) Analyzes user stories and acceptance criteria to generate comprehensive Apex Test Classes.
+6.  **`TestExecutorAgent`**: Deploys and executes the Apex tests, providing detailed results and coverage analysis.
+7.  **`FlowTestAgent`**: (If Apex tests pass) Executes additional Flow tests via API and UI automation.
+    - **If tests fail**: Feedback (failed assertions, logs) is routed back to `FlowBuilderAgent` for repair, or to `TestDesignerAgent` for test refinement. Loop through build-deploy-test cycle.
+8.  **Output**: Successfully deployed and tested Flow with comprehensive test coverage, or a report of issues if the process cannot be completed.
 
 ## Observability with LangSmith
 
@@ -106,20 +128,25 @@ LangSmith will be integral for:
     - Deeper understanding of complex Flow logic and patterns.
     - More sophisticated repair strategies.
 - **`FlowTestAgent` (UI-based)**: Introduce browser automation for screen Flow testing.
+- **`TestDesignerAgent`**: Generate comprehensive Apex Test Classes from user stories and acceptance criteria.
+- **`TestExecutorAgent`**: Execute Apex tests and provide detailed analysis and reporting.
 - **Knowledge Base Expansion**: More comprehensive documentation and examples for RAG.
 - **Enhanced Error Handling**: More resilient agent interactions.
+- **Comprehensive Testing Workflow**: Integrate test design and execution into the main orchestration.
 
 ### Phase 4: Workforce Expansion & Optimization
 - Introduction of new specialized agents (e.g., `ApexGeneratorAgent`, `LWCBuilderAgent`).
 - Performance optimization of existing agents.
 - Advanced LangGraph patterns for parallel execution and more complex workflows.
 - Fine-tuning models based on LangSmith data.
+- **Advanced Test Analytics**: Implement test trend analysis and predictive test failure detection.
 
 ## Success Metrics
 - **End-to-End Task Completion Rate**: Percentage of Flow implementation requests successfully completed.
 - **Automation Level**: Reduction in manual effort for Flow creation, deployment, and testing.
 - **Accuracy & Quality**: Quality of generated Flows, adherence to best practices, and test pass rates.
-- **Cycle Time**: Time taken from requirement input to a deployed and tested Flow.
+- **Test Coverage**: Percentage of code and business logic covered by automated tests.
+- **Cycle Time**: Time taken from requirement input to a deployed and tested Flow with comprehensive test coverage.
 - **Agent Collaboration Efficiency**: Measured via LangSmith traces (e.g., number of retries, error rates in handoffs).
 
 ## Risk Mitigation
@@ -127,10 +154,14 @@ LangSmith will be integral for:
 - **Complexity of Orchestration**: Start with simple LangGraph flows and add complexity incrementally.
 - **Credential Security (`AuthenticationAgent`)**: Utilize secure storage mechanisms (e.g., environment variables, dedicated secret managers) and follow security best practices.
 - **Browser Automation Flakiness (`FlowTestAgent`)**: Design robust selectors, implement retry mechanisms, and use tools designed for stability.
+- **Test Quality (`TestDesignerAgent`)**: Implement validation mechanisms for generated test code and ensure comprehensive test scenarios.
+- **Test Execution Reliability (`TestExecutorAgent`)**: Handle test environment issues, timeout scenarios, and provide clear error reporting.
 - **Scalability of LLM Calls**: Optimize prompts, consider batching, and monitor costs.
 
 ## Future Enhancements
 - Self-healing and adaptive workflows in LangGraph.
 - Agents learning and improving from past interactions (potentially using LangSmith data for fine-tuning).
 - Dynamic agent discovery and composition.
-- User interface for managing the agent workforce and initiating tasks. 
+- User interface for managing the agent workforce and initiating tasks.
+- **AI-Driven Test Optimization**: Use machine learning to identify optimal test scenarios and improve test efficiency.
+- **Cross-Platform Testing**: Extend testing capabilities to mobile and other Salesforce platforms. 

@@ -206,17 +206,151 @@
 
 ---
 
-### Task 3.3: Knowledge Base & RAG Expansion
+### Agent 5: TestDesignerAgent
+
+#### Task 3.3.1: Define `TestDesignerAgent` Interface & State
+**Priority**: High | **Estimated Time**: 3 hours
+- [ ] Define Pydantic models for input (user story, acceptance criteria, Flow name, target object information).
+- [ ] Define output models (Apex test class code, test scenarios, coverage mapping).
+- [ ] Design agent's state in LangGraph (e.g., `test_scenarios: List[dict]`, `apex_test_classes: List[str]`, `test_design_status: str`).
+
+#### Task 3.3.2: Implement User Story Analysis Tool
+**Priority**: High | **Estimated Time**: 5-7 hours
+- [ ] Create `UserStoryAnalyzerTool`.
+- [ ] Tool parses user stories and acceptance criteria to identify:
+    - Test scenarios (positive and negative cases).
+    - Required test data setup.
+    - Expected outcomes and assertions.
+    - Edge cases and boundary conditions.
+- [ ] Output structured test scenario definitions for Apex generation.
+
+#### Task 3.3.3: Implement Apex Test Class Generation Tool
+**Priority**: High | **Estimated Time**: 8-12 hours
+- [ ] Create `ApexTestClassGeneratorTool`.
+- [ ] Tool generates comprehensive Apex test classes with:
+    - Proper class structure and annotations (@isTest, @TestSetup).
+    - Test data setup methods using Test.startTest()/Test.stopTest() patterns.
+    - Individual test methods for each identified scenario.
+    - Proper assertions (System.assert*, Test.getFlowVars()).
+    - Error handling and negative test cases.
+- [ ] Support for testing Flow invocations, both autolaunched and screen flows.
+- [ ] Include best practices for Apex testing (bulk operations, governor limits).
+
+#### Task 3.3.4: Implement Salesforce Data Model Analysis Tool
+**Priority**: Medium | **Estimated Time**: 4-6 hours
+- [ ] Create `SalesforceSchemaAnalyzerTool`.
+- [ ] Tool analyzes target Salesforce org's data model to:
+    - Identify required and optional fields for test data creation.
+    - Understand object relationships and dependencies.
+    - Generate appropriate test data that respects validation rules.
+- [ ] Integration with Salesforce Schema API to retrieve object metadata.
+
+#### Task 3.3.5: Build `TestDesignerAgent`
+**Priority**: High | **Estimated Time**: 6-8 hours
+- [ ] Create `test_designer_agent.py`.
+- [ ] Define prompts for the agent to:
+    1. Analyze user stories and acceptance criteria using `UserStoryAnalyzerTool`.
+    2. Understand Salesforce data model using `SalesforceSchemaAnalyzerTool`.
+    3. Generate comprehensive test scenarios.
+    4. Use `ApexTestClassGeneratorTool` to create Apex test code.
+- [ ] Agent outputs structured test information to LangGraph state.
+- [ ] Include validation logic to ensure generated Apex code follows best practices.
+
+---
+
+### Agent 6: TestExecutorAgent
+
+#### Task 3.4.1: Define `TestExecutorAgent` Interface & State
+**Priority**: High | **Estimated Time**: 2-3 hours
+- [ ] Define Pydantic models for input (Apex test classes, deployment session details).
+- [ ] Define output models (test execution results, coverage metrics, failure analysis).
+- [ ] Design agent's state in LangGraph (e.g., `test_execution_id: str`, `test_results: dict`, `coverage_report: dict`, `execution_status: str`).
+
+#### Task 3.4.2: Implement Apex Test Deployment Tool
+**Priority**: High | **Estimated Time**: 5-7 hours
+- [ ] Create `ApexTestDeployerTool`.
+- [ ] Tool deploys Apex test classes to Salesforce org using Metadata API.
+- [ ] Handle packaging of test classes into deployable metadata format.
+- [ ] Provide deployment status and error handling.
+- [ ] Integration with existing `DeploymentAgent` patterns for consistency.
+
+#### Task 3.4.3: Implement Test Execution Tool
+**Priority**: High | **Estimated Time**: 6-8 hours
+- [ ] Create `ApexTestRunnerTool`.
+- [ ] Tool executes Apex tests using Salesforce Tooling API.
+- [ ] Monitor test execution progress and handle long-running tests.
+- [ ] Collect detailed test results including:
+    - Pass/fail status for each test method.
+    - Execution time and performance metrics.
+    - Code coverage information.
+    - Detailed error messages and stack traces for failures.
+
+#### Task 3.4.4: Implement Test Results Analysis Tool
+**Priority**: Medium | **Estimated Time**: 4-6 hours
+- [ ] Create `TestResultsAnalyzerTool`.
+- [ ] Tool analyzes test execution results to:
+    - Categorize failures (assertion failures, exceptions, timeouts).
+    - Identify patterns in test failures.
+    - Generate recommendations for test improvements.
+    - Assess overall test coverage and quality metrics.
+- [ ] Generate human-readable test reports with actionable insights.
+
+#### Task 3.4.5: Build `TestExecutorAgent`
+**Priority**: High | **Estimated Time**: 5-7 hours
+- [ ] Create `test_executor_agent.py`.
+- [ ] Define prompts for the agent to:
+    1. Deploy Apex test classes using `ApexTestDeployerTool`.
+    2. Execute tests using `ApexTestRunnerTool`.
+    3. Analyze results using `TestResultsAnalyzerTool`.
+    4. Provide comprehensive feedback and recommendations.
+- [ ] Agent reports detailed test outcomes to LangGraph state.
+- [ ] Include retry logic for transient test execution failures.
+
+---
+
+### Task 3.5: Knowledge Base & RAG Expansion
 **Priority**: Medium | **Estimated Time**: 5-8 hours
 - [ ] Ingest more varied documentation: Salesforce release notes on Flows, community articles, Apex developer guide (for Flow-Apex interactions).
+- [ ] Add Apex testing best practices and patterns to the knowledge base.
 - [ ] Curate and chunk documents effectively for RAG.
 - [ ] Implement strategies for citing sources from RAG to improve transparency.
 
-### Task 3.4: Enhanced Error Handling & State Management in LangGraph
+### Task 3.6: Enhanced Error Handling & State Management in LangGraph
 **Priority**: High | **Estimated Time**: 4-6 hours
 - [ ] More robust error classification and routing in LangGraph.
 - [ ] Implement more sophisticated retry mechanisms (e.g., exponential backoff for API calls within tools).
 - [ ] Richer state representation for debugging in LangSmith (e.g., storing intermediate thoughts of agents).
+
+---
+
+## Phase 3.5: Comprehensive Testing Workflow Integration
+
+### Task 3.7: LangGraph Orchestration (Enhanced Build-Deploy-Test Cycle)
+**Priority**: High | **Estimated Time**: 8-12 hours
+- [ ] Extend the LangGraph workflow to include `TestDesignerAgent` and `TestExecutorAgent`.
+- [ ] Implement new conditional edges:
+    - After successful Flow deployment: Route to `TestDesignerAgent`.
+    - After test design completion: Route to `TestExecutorAgent`.
+    - If Apex tests fail: Route back to `FlowBuilderAgent` with detailed failure analysis.
+    - If Apex tests pass: Route to existing `FlowTestAgent` for additional validation.
+- [ ] Implement parallel execution where possible (e.g., test design while Flow deployment is in progress).
+- [ ] Enhanced state management for test-related data throughout the workflow.
+
+### Task 3.8: Test-Driven Development Integration
+**Priority**: Medium | **Estimated Time**: 6-8 hours
+- [ ] Implement feedback loops from test results to Flow design.
+- [ ] Enable `FlowBuilderAgent` to incorporate test failure insights into Flow improvements.
+- [ ] Create mechanisms for `TestDesignerAgent` to refine test scenarios based on execution results.
+- [ ] Establish criteria for when to iterate on tests vs. Flow implementation.
+
+### Task 3.9: Comprehensive Reporting and Analytics
+**Priority**: Medium | **Estimated Time**: 4-6 hours
+- [ ] Implement end-to-end reporting that includes:
+    - Flow design and deployment metrics.
+    - Test coverage and execution results.
+    - Quality indicators and improvement recommendations.
+- [ ] Integration with LangSmith for comprehensive workflow tracking.
+- [ ] Generate stakeholder-friendly reports summarizing the complete implementation cycle.
 
 ---
 

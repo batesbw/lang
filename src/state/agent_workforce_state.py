@@ -24,6 +24,17 @@ class AgentWorkforceState(TypedDict, total=False):
     current_deployment_request: Optional[Dict[str, Any]]  # Serialized DeploymentRequest
     current_deployment_response: Optional[Dict[str, Any]]  # Serialized DeploymentResponse
     
+    # TestDesigner related state
+    current_test_designer_request: Optional[Dict[str, Any]]  # Serialized TestDesignerRequest
+    current_test_designer_response: Optional[Dict[str, Any]]  # Serialized TestDesignerResponse
+    test_scenarios: Optional[List[Dict[str, Any]]]  # Serialized TestScenario objects
+    apex_test_classes: Optional[List[Dict[str, Any]]]  # Serialized ApexTestClass objects
+    deployable_apex_code: Optional[List[str]]  # Generated Apex test class code ready for deployment
+    
+    # Test Class Deployment related state
+    current_test_deployment_request: Optional[Dict[str, Any]]  # Serialized DeploymentRequest for test classes
+    current_test_deployment_response: Optional[Dict[str, Any]]  # Serialized DeploymentResponse for test classes
+    
     # Web Search related state
     current_web_search_request: Optional[Dict[str, Any]]  # Serialized WebSearchAgentRequest
     current_web_search_response: Optional[Dict[str, Any]]  # Serialized WebSearchAgentResponse
@@ -31,6 +42,7 @@ class AgentWorkforceState(TypedDict, total=False):
     # Simple Retry Management
     build_deploy_retry_count: int  # Current retry attempt for build/deploy cycle
     max_build_deploy_retries: int  # Maximum allowed retries from environment
+    test_deploy_retry_count: int  # Current retry attempt for test deployment cycle
     
     # General state
     messages: Optional[List[Any]]  # For storing LangGraph message history

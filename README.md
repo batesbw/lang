@@ -19,6 +19,9 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 LANGSMITH_API_KEY=your_langsmith_api_key
 LANGCHAIN_API_KEY=your_langchain_api_key  # Alternative to LANGSMITH_API_KEY
 
+# Optional (for web search integration - enhances deployment failure recovery)
+TAVILY_API_KEY=your_tavily_api_key
+
 # Salesforce credentials (replace E2E_TEST_ORG with your org alias)
 SF_USERNAME_E2E_TEST_ORG=your_salesforce_username
 SF_CONSUMER_KEY_E2E_TEST_ORG=your_connected_app_consumer_key
@@ -367,6 +370,11 @@ This project is for educational and professional development purposes. Please en
 - **Deployment Agent**: Automated Flow deployment with error handling
 - **Intelligent Retry Logic**: Automatic retries for validation errors and deployment failures
 - **Comprehensive Logging**: Detailed execution tracking and error reporting
+- **Web Search Integration**: Enhanced deployment failure recovery with intelligent web search
+  - Automatically searches for solutions when deployments fail
+  - Prioritizes official Salesforce documentation and community solutions
+  - Integrates search insights into retry attempts for improved success rates
+  - Optional feature (requires TAVILY_API_KEY)
 
 ## Architecture
 
@@ -421,18 +429,31 @@ See [FLOW_SCANNER_SETUP.md](FLOW_SCANNER_SETUP.md) for detailed Lightning Flow S
 Create a `.env` file in the root directory:
 
 ```env
-# Required
-ANTHROPIC_API_KEY=your-anthropic-api-key
+# Required: Anthropic API Key for LLM functionality
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# Optional
-LANGSMITH_API_KEY=your-langsmith-api-key
+# Optional: Anthropic model to use (default: claude-3-5-sonnet-20241022)
 ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+
+# Optional: Maximum tokens for LLM responses (default: 4096)
+LLM_MAX_TOKENS=4096
+
+# Optional: LangSmith API Key for tracing and observability
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+
+# Optional: Tavily API Key for web search functionality
+TAVILY_API_KEY=your_tavily_api_key_here
+
+# Optional: Maximum build/deploy retry attempts (default: 3)
 MAX_BUILD_DEPLOY_RETRIES=3
 
-# Flow Scanner Configuration
-FLOW_SCANNER_CLI_PATH=sf
-FLOW_SCANNER_TIMEOUT=30
-FLOW_SCANNER_OUTPUT_FORMAT=json
+# Optional: LangGraph recursion limit (default: 50)
+LANGGRAPH_RECURSION_LIMIT=50
+
+# Salesforce JWT Bearer Flow Settings
+SALESFORCE_CLIENT_ID=your_connected_app_client_id
+SALESFORCE_PRIVATE_KEY_PATH=path/to/your/private_key.pem
+SALESFORCE_USERNAME=your_salesforce_username
 ```
 
 ## Installation
@@ -559,6 +580,12 @@ FLOW_SCANNER_CLI_PATH=sf           # Path to Salesforce CLI
 FLOW_SCANNER_TIMEOUT=30            # Scanner timeout in seconds
 FLOW_SCANNER_OUTPUT_FORMAT=json    # Scanner output format
 ```
+
+### Advanced Configuration
+
+- **LANGGRAPH_RECURSION_LIMIT**: Controls the maximum number of steps LangGraph can execute before terminating. If you're experiencing recursion limit errors, increase this value from the default of 50.
+- **MAX_BUILD_DEPLOY_RETRIES**: Controls how many times the system will retry building and deploying a Flow when deployment fails.
+- **ANTHROPIC_MODEL**: You can use different Claude models based on your needs and API access.
 
 ## Troubleshooting
 
