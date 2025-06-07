@@ -24,7 +24,7 @@ from src.agents.test_designer_agent import run_test_designer_agent
 from src.schemas.auth_schemas import AuthenticationRequest, SalesforceAuthResponse
 from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
-from src.schemas.web_search_schemas import WebSearchRequest, WebSearchAgentRequest, WebSearchAgentResponse
+from src.schemas.web_search_schemas import WebSearchRequest, WebSearchAgentRequest, WebSearchAgentResponse, SearchDepth
 from src.schemas.test_designer_schemas import TestDesignerRequest, TestDesignerResponse
 
 # Load environment variables
@@ -424,7 +424,8 @@ def _analyze_deployment_error(error_message: str, component_errors: list, flow_x
             "Use individual record variables instead of collection variables for assignments",
             "Initialize collection variables properly before using them",
             "Ensure assignment elements target individual variables, not collections",
-            "Check flow element configurations for proper variable usage"
+            "Check flow element configurations for proper variable usage",
+            "Convert collection variables to individual variables for assignment operations"
         ])
         analysis["error_patterns"].append("COLLECTION_VARIABLE_INPUT_ERROR")
     
@@ -610,7 +611,7 @@ def prepare_web_search_request(state: AgentWorkforceState) -> AgentWorkforceStat
             if "field integrity exception" in problem.lower():
                 search_query = "Salesforce Flow field integrity exception deployment error"
             elif "inputassignments field can't use a collection variable" in problem.lower():
-                search_query = "Salesforce Flow inputAssignments collection variable deployment error"
+                search_query = "Salesforce Flow inputAssignments collection variable deployment error fix"
             elif "is not valid for the type xsd:" in problem.lower():
                 search_query = "Salesforce Flow deployment error xsd type validation XML parsing"
             elif "invalid flow element" in problem.lower() or "unknown element" in problem.lower():
