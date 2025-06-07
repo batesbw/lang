@@ -134,6 +134,9 @@ class FlowBuildRequest(BaseModel):
     user_story: Optional[UserStory] = Field(None, description="User story that drives this flow")
     requirements: Optional[FlowRequirement] = Field(None, description="Detailed flow requirements")
     
+    # Test-Driven Development context
+    tdd_context: Optional[Dict[str, Any]] = Field(None, description="Test-Driven Development context including test scenarios and deployed test classes")
+    
     # Flow configuration
     flow_type: FlowType = Field(default=FlowType.SCREEN_FLOW, description="Type of flow to create")
     trigger_object: Optional[str] = Field(None, description="Object that triggers the flow")

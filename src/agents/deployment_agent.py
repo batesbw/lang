@@ -3,6 +3,7 @@ from typing import Optional
 from langchain_core.language_models import BaseLanguageModel
 
 from src.tools.salesforce_deployer_tool import SalesforceDeployerTool
+from src.tools.deployment_error_logger_tool import DeploymentErrorLoggerTool, DeploymentErrorLogRequest
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 from src.state.agent_workforce_state import AgentWorkforceState # Updated path
 
@@ -12,10 +13,18 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
 
     This agent takes a DeploymentRequest from the state, uses the
     SalesforceDeployerTool to deploy multiple metadata components to Salesforce,
-    and updates the state with a DeploymentResponse.
+    and updates the state with a DeploymentResponse. If deployment fails,
+    it automatically logs the error to deploymentErrors/errorsDB.md with web search suggestions.
     """
     print("----- DEPLOYMENT AGENT -----")
     deployment_request_dict = state.get("current_deployment_request")
+    retry_count = state.get("build_deploy_retry_count", 0)
+    
+    # Enhanced debugging for retry tracking
+    if retry_count > 0:
+        print(f"🔄 DEPLOYMENT AGENT - Processing RETRY ATTEMPT #{retry_count}")
+    else:
+        print("🆕 DEPLOYMENT AGENT - Processing INITIAL ATTEMPT")
     
     response_updates = {}
 
@@ -26,10 +35,26 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
             
             print(f"Processing DeploymentRequest ID: {deployment_request.request_id}")
             
-            # Display components to be deployed
+            # Display components to be deployed with enhanced debugging
             component_info = []
-            for component in deployment_request.components:
+            for i, component in enumerate(deployment_request.components):
                 component_info.append(f"{component.component_type}:{component.api_name}")
+                
+                # Show XML details for Flow components
+                if component.component_type == "Flow":
+                    xml_length = len(component.metadata_xml)
+                    xml_snippet = component.metadata_xml[:200].replace('\n', ' ').replace('\r', ' ')
+                    
+                    print(f"📄 Flow XML received by Deployment Agent:")
+                    print(f"   Component #{i+1}: {component.api_name}")
+                    print(f"   XML Length: {xml_length} characters")
+                    print(f"   XML Preview: {xml_snippet}...")
+                    
+                    if retry_count > 0:
+                        print(f"   🔄 This should be UPDATED XML from retry #{retry_count}")
+                    else:
+                        print(f"   🆕 This should be INITIAL XML")
+            
             print(f"Components to deploy: {', '.join(component_info)}")
 
             tool = SalesforceDeployerTool()
@@ -42,6 +67,9 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
                 print(f"   Salesforce Deployment ID: {deployment_response.deployment_id}")
                 print(f"   Components deployed: {deployment_response.successful_components}/{deployment_response.total_components}")
                 
+                if retry_count > 0:
+                    print(f"   🎉 RETRY #{retry_count} was SUCCESSFUL!")
+                
                 if deployment_response.component_successes:
                     print("   Successfully deployed components:")
                     for success in deployment_response.component_successes:
@@ -51,6 +79,11 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
                 print(f"❌ Deployment failed for request ID: {deployment_request.request_id}")
                 print(f"   Status: {deployment_response.status}")
                 print(f"   Components failed: {deployment_response.failed_components}/{deployment_response.total_components}")
+                
+                if retry_count > 0:
+                    print(f"   😞 RETRY #{retry_count} also FAILED - will analyze for next retry")
+                else:
+                    print(f"   📊 INITIAL attempt FAILED - will analyze and retry")
                 
                 if deployment_response.error_message:
                     print(f"   Error: {deployment_response.error_message}")
@@ -62,6 +95,23 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
                         component_type = error.get('componentType', 'Unknown')
                         problem = error.get('problem', 'Unknown error')
                         print(f"     - {component_name} ({component_type}): {problem}")
+                
+                # NEW: Log deployment error with web search suggestions
+                try:
+                    print("📝 Logging deployment error with web search suggestions...")
+                    error_logger = DeploymentErrorLoggerTool()
+                    
+                    log_request = DeploymentErrorLogRequest(
+                        deployment_response=deployment_response,
+                        components=deployment_request.components
+                    )
+                    
+                    log_result = error_logger._run(log_request)
+                    print(f"   ✅ Error logging result: {log_result}")
+                    
+                except Exception as log_error:
+                    print(f"   ⚠️ Failed to log deployment error: {str(log_error)}")
+                    # Don't fail the deployment process if logging fails
 
             # Convert response to dict for state storage
             response_updates["current_deployment_response"] = deployment_response.model_dump()

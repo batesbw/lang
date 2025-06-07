@@ -218,17 +218,29 @@ DO NOT include explanations, comments about the code structure, or any text outs
 DO NOT use markdown code blocks or any formatting.
 OUTPUT ONLY the raw Apex test class code that can be directly deployed.
 
+CRITICAL: This is for Test-Driven Development (TDD) - the Flow does not exist yet!
+DO NOT use Flow.Interview.createInterview() or any direct Flow invocation methods.
+Instead, test the OUTCOMES that the Flow should produce when it's implemented.
+
 Requirements for the Apex test class:
 - Use @isTest annotation
 - Include @TestSetup method for test data creation
 - Create individual test methods for positive, negative, and bulk scenarios
-- Use proper Flow.Interview.createInterview() for Flow testing
+- Test the expected OUTCOMES/SIDE EFFECTS of what the Flow should do
+- For Record-Triggered Flows: Test record operations (insert/update/delete) and verify the expected changes
+- For Screen Flows: Test the data processing logic that the Flow should implement
 - Include Test.startTest() and Test.stopTest() in test methods
 - Add System.assert* statements for validation
 - Follow Salesforce naming conventions
-- Ensure the class compiles and runs successfully"""),
+- Ensure the class compiles and runs successfully
+
+TDD Testing Approach:
+- Test what SHOULD HAPPEN when records are created/updated/deleted
+- Verify field updates, calculations, related record changes
+- Test business logic outcomes, not Flow execution
+- Focus on the acceptance criteria and expected behavior"""),
             
-            ("human", """Generate a complete Apex test class for this Salesforce Flow:
+            ("human", """Generate a complete Apex test class for this Salesforce Flow using TDD approach:
 
 Flow Name: {flow_name}
 Flow Type: {flow_type}
@@ -239,7 +251,7 @@ User Story: {user_story_text}
 Acceptance Criteria:
 {acceptance_criteria_text}
 
-Generate ONLY the Apex test class code - no explanations, no markdown, just raw deployable Apex code.""")
+Generate ONLY the Apex test class code that tests the EXPECTED OUTCOMES - no explanations, no markdown, just raw deployable Apex code that tests what the Flow should accomplish.""")
         ])
         
         # Format the inputs
@@ -256,7 +268,7 @@ Generate ONLY the Apex test class code - no explanations, no markdown, just raw 
         )
         
         # Get LLM response
-        print("🔄 Generating Apex test class with LLM...")
+        print("🔄 Generating TDD-focused Apex test class with LLM...")
         response = LLM.invoke(messages)
         
         # The response content should be pure Apex code
@@ -266,41 +278,41 @@ Generate ONLY the Apex test class code - no explanations, no markdown, just raw 
         test_scenarios = [
             TestScenario(
                 scenario_id="TS001",
-                title=f"Happy Path - {request.flow_name}",
-                description=f"Test successful execution of {request.flow_name}",
+                title=f"TDD Happy Path - {request.flow_name}",
+                description=f"Test expected outcomes when {request.flow_name} logic is triggered",
                 scenario_type="positive",
                 priority="Critical",
                 required_objects=request.target_objects,
-                test_steps=["Setup test data", f"Execute {request.flow_name}", "Verify results"],
-                expected_outcomes=["Flow executes successfully"],
-                success_criteria=request.acceptance_criteria[:2] if request.acceptance_criteria else ["Flow completes"],
-                flow_elements_tested=["Flow execution"],
-                coverage_areas=["Main flow logic"]
+                test_steps=["Setup test data", "Trigger expected behavior", "Verify outcomes"],
+                expected_outcomes=["Business logic produces expected results"],
+                success_criteria=request.acceptance_criteria[:2] if request.acceptance_criteria else ["Expected outcomes achieved"],
+                flow_elements_tested=["Business logic outcomes"],
+                coverage_areas=["Main business logic results"]
             ),
             TestScenario(
                 scenario_id="TS002", 
-                title=f"Error Handling - {request.flow_name}",
-                description=f"Test error conditions in {request.flow_name}",
+                title=f"TDD Error Handling - {request.flow_name}",
+                description=f"Test expected error handling outcomes for {request.flow_name}",
                 scenario_type="negative",
                 priority="High",
                 required_objects=request.target_objects,
-                test_steps=["Setup invalid data", f"Execute {request.flow_name}", "Verify error handling"],
-                expected_outcomes=["Errors handled gracefully"],
-                success_criteria=["Error paths work correctly"],
-                flow_elements_tested=["Error handling"],
+                test_steps=["Setup invalid data", "Trigger expected behavior", "Verify error outcomes"],
+                expected_outcomes=["Errors handled as expected"],
+                success_criteria=["Error scenarios produce expected results"],
+                flow_elements_tested=["Error handling outcomes"],
                 coverage_areas=["Error scenarios"]
             )
         ]
         
         # Create apex test class metadata
-        class_name = f"Test{request.flow_name.replace('_', '').replace(' ', '')}"
+        class_name = f"{request.flow_name.replace('_', '').replace(' ', '')}_Test"
         apex_test_class = ApexTestClass(
             class_name=class_name,
-            description=f"Test class for {request.flow_name}",
+            description=f"TDD test class for {request.flow_name} - tests expected outcomes",
             flow_name=request.flow_name,
             class_annotations=["@isTest"],
             expected_coverage_percentage=request.test_coverage_target,
-            best_practices_applied=["TestSetup data isolation", "Proper assertions", "Flow testing patterns"]
+            best_practices_applied=["TDD outcome testing", "TestSetup data isolation", "Proper assertions", "No direct Flow invocation"]
         )
         
         return TestDesignerResponse(
@@ -310,15 +322,15 @@ Generate ONLY the Apex test class code - no explanations, no markdown, just raw 
             apex_test_classes=[apex_test_class],
             salesforce_objects_analyzed=[],
             test_data_strategy={
-                "approach": "TestSetup with mock data",
-                "considerations": ["Flow input validation", "Target object requirements"]
+                "approach": "TDD - TestSetup with mock data, test outcomes not Flow execution",
+                "considerations": ["Test business logic results", "Target object field updates", "Related record changes"]
             },
             coverage_mapping={
                 "positive_scenarios": ["TS001"],
                 "negative_scenarios": ["TS002"]
             },
-            risk_analysis=["Validate Flow permissions", "Test data dependencies"],
-            implementation_recommendations=["Deploy to test environment first", "Monitor test execution"],
+            risk_analysis=["Validate expected business outcomes", "Test data dependencies"],
+            implementation_recommendations=["Deploy to test environment first", "Tests should pass once Flow is implemented"],
             deployable_apex_code=[apex_code]
         )
         
@@ -420,84 +432,65 @@ def _create_comprehensive_test_response(request: TestDesignerRequest, agent_outp
     # Mock deployable Apex code
     deployable_apex_code = [
         f"""/**
- * Comprehensive test class for {request.flow_name} Flow
- * Generated by TestDesigner Agent
+ * Comprehensive TDD test class for {request.flow_name} Flow
+ * Generated by TestDesigner Agent - Tests Expected Outcomes
  * Target Coverage: {request.test_coverage_target}%
+ * 
+ * NOTE: This is TDD - tests verify expected OUTCOMES when business logic is applied,
+ * not direct Flow execution since the Flow doesn't exist yet.
  */
 @isTest
-public class Test{request.flow_name.replace('_', '')} {{
+public class {request.flow_name.replace('_', '').replace(' ', '')}_Test {{
     
     @TestSetup
     static void setupTestData() {{
-        // Create test data for {', '.join(request.target_objects) if request.target_objects else 'flow testing'}
+        // Create test data for {', '.join(request.target_objects) if request.target_objects else 'business logic testing'}
         {_generate_test_data_setup(request.target_objects)}
     }}
     
     @isTest
-    static void test{request.flow_name.replace('_', '')}_HappyPath() {{
+    static void test{request.flow_name.replace('_', '')}_ExpectedOutcomes() {{
         Test.startTest();
         
-        // Execute {request.flow_name} Flow with valid inputs
-        Map<String, Object> flowInputs = new Map<String, Object>();
-        // Add specific input variables based on Flow requirements
+        // Test the expected business outcomes that the Flow should produce
+        // For Record-Triggered Flows: perform record operations and verify expected changes
+        // For Screen Flows: test the data processing logic outcomes
         
-        Flow.Interview flowInterview = Flow.Interview.createInterview('{request.flow_name}', flowInputs);
-        flowInterview.start();
+        {_generate_outcome_test_logic(request)}
         
         Test.stopTest();
         
-        // Assert expected outcomes
-        System.assertNotEquals(null, flowInterview, 'Flow interview should be created');
-        // Add specific assertions based on acceptance criteria
+        // Assert expected business outcomes based on acceptance criteria
+        {_generate_outcome_assertions(request)}
     }}
     
     @isTest
-    static void test{request.flow_name.replace('_', '')}_ErrorHandling() {{
+    static void test{request.flow_name.replace('_', '')}_ErrorScenarios() {{
         Test.startTest();
         
-        // Test error handling with invalid inputs
-        Map<String, Object> invalidInputs = new Map<String, Object>();
-        // Add invalid input scenarios
-        
-        try {{
-            Flow.Interview flowInterview = Flow.Interview.createInterview('{request.flow_name}', invalidInputs);
-            flowInterview.start();
-            
-            // Assert error handling if Flow doesn't throw exceptions
-            // Add appropriate assertions for error scenarios
-        }} catch (Exception e) {{
-            // Verify expected exception handling
-            System.assert(e.getMessage().contains('expected_error_pattern'), 'Expected error message not found');
-        }}
+        // Test error/edge case scenarios and their expected outcomes
+        {_generate_error_scenario_logic(request)}
         
         Test.stopTest();
+        
+        // Assert expected error handling outcomes
+        {_generate_error_assertions(request)}
     }}
     
     {f'''@isTest
-    static void test{request.flow_name.replace('_', '')}_BulkProcessing() {{
+    static void test{request.flow_name.replace('_', '')}_BulkOperations() {{
         Test.startTest();
         
-        // Create bulk test data (200+ records)
-        List<Map<String, Object>> bulkInputs = new List<Map<String, Object>>();
-        for (Integer i = 0; i < 200; i++) {{
-            Map<String, Object> bulkInput = new Map<String, Object>();
-            // Add bulk input data
-            bulkInputs.add(bulkInput);
-        }}
-        
-        // Execute Flow with bulk data
-        for (Map<String, Object> input : bulkInputs) {{
-            Flow.Interview bulkInterview = Flow.Interview.createInterview('{request.flow_name}', input);
-            bulkInterview.start();
-        }}
+        // Test bulk scenarios (200+ records) and expected outcomes
+        {_generate_bulk_test_logic(request)}
         
         Test.stopTest();
         
-        // Assert bulk processing results
-        // Add bulk operation validations
+        // Assert bulk operation outcomes
+        {_generate_bulk_assertions(request)}
     }}''' if request.include_bulk_tests else ''}
     
-    // Utility methods for test data creation
+    // Utility methods for test data creation and validation
     {_generate_utility_methods(request.target_objects)}
 }}"""
     ]
@@ -571,18 +564,129 @@ def _generate_test_data_setup(target_objects: List[str]) -> str:
 def _generate_utility_methods(target_objects: List[str]) -> str:
     """Generate utility methods for test data creation"""
     if not target_objects:
-        return "// Add utility methods for test data creation"
+        return "// Add utility methods based on business logic requirements"
     
-    methods = []
+    utility_methods = []
     for obj in target_objects:
-        method_name = f"create{obj}"
-        methods.append(f"""    private static {obj} {method_name}() {{
-        {obj} test{obj} = new {obj}();
-        // Set required fields for {obj}
-        return test{obj};
-    }}""")
+        if obj == "Account":
+            utility_methods.append("""
+    private static Account createTestAccount(String name) {
+        return new Account(
+            Name = name,
+            Type = 'Customer'
+        );
+    }""")
+        elif obj == "Contact":
+            utility_methods.append("""
+    private static Contact createTestContact(String lastName, Id accountId) {
+        return new Contact(
+            LastName = lastName,
+            AccountId = accountId,
+            Email = lastName.toLowerCase() + '@test.com'
+        );
+    }""")
+        elif obj == "Opportunity":
+            utility_methods.append("""
+    private static Opportunity createTestOpportunity(String name, Id accountId) {
+        return new Opportunity(
+            Name = name,
+            AccountId = accountId,
+            StageName = 'Prospecting',
+            CloseDate = Date.today().addDays(30),
+            Amount = 10000
+        );
+    }""")
     
-    return "\n\n".join(methods)
+    return "\n".join(utility_methods)
+
+def _generate_outcome_test_logic(request: TestDesignerRequest) -> str:
+    """Generate test logic that focuses on expected business outcomes"""
+    if request.flow_type == "Record-Triggered Flow":
+        # For record-triggered flows, test the trigger scenarios
+        if "Contact" in request.target_objects and "Account" in request.target_objects:
+            return """// Test scenario: Insert/Update Contact should trigger expected business logic
+        Account testAccount = [SELECT Id, Name FROM Account LIMIT 1];
+        
+        // Perform the trigger action (insert/update Contact)
+        Contact newContact = new Contact(
+            FirstName = 'Test',
+            LastName = 'Trigger Contact',
+            AccountId = testAccount.Id,
+            Email = 'test.trigger@example.com'
+        );
+        insert newContact;
+        
+        // Additional trigger scenarios based on acceptance criteria
+        newContact.Email = 'updated.trigger@example.com';
+        update newContact;"""
+        else:
+            return f"""// Test scenario: Record operations should trigger expected business logic
+        // Perform operations on {', '.join(request.target_objects)} to trigger Flow logic
+        // Add specific record operations based on Flow trigger conditions"""
+    else:
+        return """// Test scenario: Business logic processing should produce expected outcomes
+        // Add specific data processing logic that the Flow should implement
+        // Focus on input/output validation and business rule enforcement"""
+
+def _generate_outcome_assertions(request: TestDesignerRequest) -> str:
+    """Generate assertions that verify expected business outcomes"""
+    assertions = []
+    
+    # Generate assertions based on acceptance criteria
+    for i, criteria in enumerate(request.acceptance_criteria):
+        if "count" in criteria.lower():
+            assertions.append(f"// Assert: {criteria}")
+            assertions.append("// System.assertEquals(expectedCount, actualCount, 'Count calculation should match criteria');")
+        elif "update" in criteria.lower():
+            assertions.append(f"// Assert: {criteria}")
+            assertions.append("// System.assert(recordWasUpdated, 'Record should be updated as per criteria');")
+        else:
+            assertions.append(f"// Assert: {criteria}")
+            assertions.append("// Add specific assertion for this acceptance criteria")
+    
+    if not assertions:
+        assertions.append("// Assert expected business outcomes based on the user story")
+        assertions.append("// Add specific validations for the business logic results")
+    
+    return "\n        ".join(assertions)
+
+def _generate_error_scenario_logic(request: TestDesignerRequest) -> str:
+    """Generate test logic for error scenarios"""
+    return """// Test error/edge scenarios that the business logic should handle
+        // Example: Invalid data, missing required fields, constraint violations
+        // Add scenarios based on potential error conditions in the business logic"""
+
+def _generate_error_assertions(request: TestDesignerRequest) -> str:
+    """Generate assertions for error scenario outcomes"""
+    return """// Assert that error scenarios are handled as expected
+        // Example: Validation errors, proper error messages, graceful degradation
+        // System.assert(errorWasHandledCorrectly, 'Error should be handled gracefully');"""
+
+def _generate_bulk_test_logic(request: TestDesignerRequest) -> str:
+    """Generate bulk test logic for performance scenarios"""
+    if "Contact" in request.target_objects and "Account" in request.target_objects:
+        return """// Test bulk operations (200+ records) to verify scalability
+        Account bulkTestAccount = [SELECT Id FROM Account LIMIT 1];
+        List<Contact> bulkContacts = new List<Contact>();
+        
+        for (Integer i = 0; i < 200; i++) {
+            bulkContacts.add(new Contact(
+                FirstName = 'Bulk',
+                LastName = 'Contact ' + i,
+                AccountId = bulkTestAccount.Id,
+                Email = 'bulk' + i + '@test.com'
+            ));
+        }
+        insert bulkContacts;"""
+    else:
+        return f"""// Test bulk operations (200+ records) for {', '.join(request.target_objects)}
+        // Create bulk test data to verify the business logic handles volume appropriately"""
+
+def _generate_bulk_assertions(request: TestDesignerRequest) -> str:
+    """Generate assertions for bulk operation outcomes"""
+    return """// Assert that bulk operations produce expected outcomes
+        // System.assertEquals(expectedBulkResult, actualBulkResult, 'Bulk operations should scale correctly');
+        // Verify governor limits are respected and performance is acceptable"""
 
 # Test harness
 if __name__ == "__main__":

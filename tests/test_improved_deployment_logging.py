@@ -37,15 +37,15 @@ def test_improved_deployment_logging():
     print("Enhanced Error Analysis Results:")
     print(f"   Error Type: {analysis['error_type']}")
     print(f"   Severity: {analysis['severity']}")
-    print(f"   Number of Required Fixes: {len(analysis['required_fixes'])}")
+    print(f"   Number of Required Fixes: {len(analysis['specific_fixes_needed'])}")
     print(f"   Error Patterns: {analysis['error_patterns']}")
     
-    if analysis['required_fixes']:
+    if analysis['specific_fixes_needed']:
         print("   Specific Fixes Identified:")
-        for i, fix in enumerate(analysis['required_fixes'], 1):
+        for i, fix in enumerate(analysis['specific_fixes_needed'], 1):
             print(f"      {i}. {fix}")
     
-    if analysis['structural_issues']:
+    if analysis.get('structural_issues'):
         print("   Structural Issues:")
         for issue in analysis['structural_issues']:
             print(f"      - {issue}")
@@ -125,6 +125,11 @@ def test_various_error_scenarios():
             "component_errors": []
         },
         {
+            "name": "Duplicate recordLookups Element (parsing error)",
+            "error": "Error parsing file: Element recordLookups is duplicated at this location in type Flow",
+            "component_errors": [{"problem": "Error parsing file: Element recordLookups is duplicated at this location in type Flow"}]
+        },
+        {
             "name": "Missing Required Fields",
             "error": "Missing required field: startElementReference is required for all flows",
             "component_errors": []
@@ -147,7 +152,7 @@ def test_various_error_scenarios():
         )
         
         print(f"   Error Type: {analysis['error_type']}")
-        print(f"   Fixes Identified: {len(analysis['required_fixes'])}")
+        print(f"   Fixes Identified: {len(analysis['specific_fixes_needed'])}")
         print(f"   Patterns Detected: {analysis['error_patterns']}")
 
 if __name__ == "__main__":

@@ -512,55 +512,58 @@ class EnhancedFlowBuilderAgent:
             "troubleshooting": []
         }
         
-        try:
-            # Search for best practices
-            for query in analysis["search_queries"]:
-                docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "best_practices",
-                    "max_results": 3
-                })
-                knowledge["best_practices"].extend(docs)
-            
-            # Search for examples and patterns
-            for query in analysis["search_queries"]:
-                docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "examples",
-                    "max_results": 2
-                })
-                knowledge["patterns"].extend(docs)
-            
-            # Find similar sample flows
-            sample_flows = find_similar_sample_flows.invoke({
-                "requirements": analysis["search_queries"][0],  # Primary query
-                "use_case": analysis["primary_use_case"],
-                "complexity": analysis["complexity_level"]
-            })
-            knowledge["sample_flows"] = sample_flows
-            
-            # Search for troubleshooting info
-            troubleshooting_docs = search_flow_knowledge_base.invoke({
-                "query": f"{analysis['primary_use_case']} troubleshooting",
-                "category": "troubleshooting",
-                "max_results": 2
-            })
-            knowledge["troubleshooting"] = troubleshooting_docs
-            
-            logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
-                       f"{len(knowledge['sample_flows'])} sample flows, "
-                       f"{len(knowledge['patterns'])} patterns, "
-                       f"{len(knowledge['troubleshooting'])} troubleshooting guides")
-            
-        except Exception as e:
-            logger.error(f"Error retrieving knowledge: {str(e)}")
-            # Return empty knowledge on error to allow flow generation to continue
-            knowledge = {
-                "best_practices": [],
-                "sample_flows": [],
-                "patterns": [],
-                "troubleshooting": []
-            }
+        # TODO: RAG searches temporarily commented out - will return to them later
+        logger.info("RAG searches temporarily disabled - returning empty knowledge")
+        
+        # try:
+        #     # Search for best practices
+        #     for query in analysis["search_queries"]:
+        #         docs = search_flow_knowledge_base.invoke({
+        #             "query": query,
+        #             "category": "best_practices",
+        #             "max_results": 3
+        #         })
+        #         knowledge["best_practices"].extend(docs)
+        #     
+        #     # Search for examples and patterns
+        #     for query in analysis["search_queries"]:
+        #         docs = search_flow_knowledge_base.invoke({
+        #             "query": query,
+        #             "category": "examples",
+        #             "max_results": 2
+        #         })
+        #         knowledge["patterns"].extend(docs)
+        #     
+        #     # Find similar sample flows
+        #     sample_flows = find_similar_sample_flows.invoke({
+        #         "requirements": analysis["search_queries"][0],  # Primary query
+        #         "use_case": analysis["primary_use_case"],
+        #         "complexity": analysis["complexity_level"]
+        #     })
+        #     knowledge["sample_flows"] = sample_flows
+        #     
+        #     # Search for troubleshooting info
+        #     troubleshooting_docs = search_flow_knowledge_base.invoke({
+        #         "query": f"{analysis['primary_use_case']} troubleshooting",
+        #         "category": "troubleshooting",
+        #         "max_results": 2
+        #     })
+        #     knowledge["troubleshooting"] = troubleshooting_docs
+        #     
+        #     logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
+        #                f"{len(knowledge['sample_flows'])} sample flows, "
+        #                f"{len(knowledge['patterns'])} patterns, "
+        #                f"{len(knowledge['troubleshooting'])} troubleshooting guides")
+        #     
+        # except Exception as e:
+        #     logger.error(f"Error retrieving knowledge: {str(e)}")
+        #     # Return empty knowledge on error to allow flow generation to continue
+        #     knowledge = {
+        #         "best_practices": [],
+        #         "sample_flows": [],
+        #         "patterns": [],
+        #         "troubleshooting": []
+        #     }
         
         return knowledge
     
@@ -574,6 +577,114 @@ class EnhancedFlowBuilderAgent:
             f"Description: {request.flow_description}",
             ""
         ]
+        
+        # Add TDD context if available - this is the key enhancement for test-driven development
+        if request.tdd_context:
+            tdd_context = request.tdd_context
+            prompt_parts.extend([
+                "🧪 TEST-DRIVEN DEVELOPMENT CONTEXT:",
+                "This Flow is being built using a Test-Driven Development approach.",
+                "The test scenarios and Apex test classes have already been deployed.",
+                "Your job is to build a Flow that will make these tests PASS.",
+                ""
+            ])
+            
+            # Add test scenarios information
+            test_scenarios = tdd_context.get("test_scenarios", [])
+            if test_scenarios:
+                prompt_parts.extend([
+                    "📋 DEPLOYED TEST SCENARIOS (Build Flow to satisfy these):",
+                ])
+                for i, scenario in enumerate(test_scenarios, 1):
+                    scenario_name = scenario.get("title", scenario.get("name", f"Scenario {i}"))
+                    scenario_desc = scenario.get("description", "")
+                    scenario_type = scenario.get("scenario_type", "").title()
+                    priority = scenario.get("priority", "Medium")
+                    
+                    prompt_parts.extend([
+                        f"{i}. {scenario_name} ({scenario_type} - {priority} Priority)",
+                        f"   Description: {scenario_desc}",
+                    ])
+                    
+                    # Add test steps if available
+                    test_steps = scenario.get("test_steps", [])
+                    if test_steps:
+                        prompt_parts.append("   Test Steps:")
+                        for step in test_steps[:3]:  # Show first 3 steps
+                            prompt_parts.append(f"     • {step}")
+                        if len(test_steps) > 3:
+                            prompt_parts.append(f"     ... and {len(test_steps) - 3} more steps")
+                    
+                    # Add expected outcomes
+                    expected_outcomes = scenario.get("expected_outcomes", [])
+                    if expected_outcomes:
+                        prompt_parts.append("   Expected Outcomes:")
+                        for outcome in expected_outcomes[:2]:  # Show first 2 outcomes
+                            prompt_parts.append(f"     ✓ {outcome}")
+                        if len(expected_outcomes) > 2:
+                            prompt_parts.append(f"     ... and {len(expected_outcomes) - 2} more outcomes")
+                    
+                    # Add success criteria
+                    success_criteria = scenario.get("success_criteria", [])
+                    if success_criteria:
+                        prompt_parts.append("   Success Criteria:")
+                        for criteria in success_criteria[:2]:  # Show first 2 criteria
+                            prompt_parts.append(f"     ✓ {criteria}")
+                        if len(success_criteria) > 2:
+                            prompt_parts.append(f"     ... and {len(success_criteria) - 2} more criteria")
+                    
+                    prompt_parts.append("")
+                
+                prompt_parts.extend([
+                    "🎯 TDD REQUIREMENT:",
+                    "Your Flow MUST be designed to make all these test scenarios pass.",
+                    "Focus on implementing the exact functionality that the tests expect.",
+                    ""
+                ])
+            
+            # Add Apex test classes information
+            apex_test_classes = tdd_context.get("apex_test_classes", [])
+            if apex_test_classes:
+                prompt_parts.extend([
+                    "🧪 DEPLOYED APEX TEST CLASSES (Flow must pass these tests):",
+                ])
+                for i, test_class in enumerate(apex_test_classes, 1):
+                    class_name = test_class.get("class_name", f"TestClass{i}")
+                    test_methods = test_class.get("test_methods", [])
+                    
+                    prompt_parts.extend([
+                        f"{i}. {class_name} ({len(test_methods)} test methods)",
+                    ])
+                    
+                    # Show test method names and descriptions
+                    for method in test_methods[:3]:  # Show first 3 methods
+                        method_name = method.get("method_name", "Unknown")
+                        method_desc = method.get("description", "")
+                        prompt_parts.append(f"     • {method_name}: {method_desc}")
+                    
+                    if len(test_methods) > 3:
+                        prompt_parts.append(f"     ... and {len(test_methods) - 3} more test methods")
+                    
+                    prompt_parts.append("")
+                
+                prompt_parts.extend([
+                    "⚠️ CRITICAL TDD CONSTRAINT:",
+                    "The Apex test classes are already deployed and expecting specific Flow behavior.",
+                    "Your Flow implementation must match what these tests are validating.",
+                    "Study the test scenarios above to understand the exact requirements.",
+                    ""
+                ])
+            
+            # Add TDD best practices
+            prompt_parts.extend([
+                "🔬 TDD DEVELOPMENT PRINCIPLES:",
+                "1. RED-GREEN-REFACTOR: Tests are already written (RED), now make them pass (GREEN)",
+                "2. Focus on making tests pass with the simplest implementation that works",
+                "3. Implement only the functionality that is actually tested",
+                "4. Ensure your Flow logic aligns with the test expectations",
+                "5. Consider edge cases and error scenarios covered by the tests",
+                ""
+            ])
         
         # Add memory context from previous attempts
         memory_context = self._get_memory_context(request.flow_api_name)
@@ -708,6 +819,40 @@ class EnhancedFlowBuilderAgent:
                     f"Severity: {error_analysis.get('severity', 'medium')}",
                     ""
                 ])
+                
+                # Special handling for duplicate elements error
+                if error_analysis.get('error_type') == 'duplicate_elements':
+                    duplicated_element = error_analysis.get('dynamic_context', {}).get('duplicated_element', 'element')
+                    prompt_parts.extend([
+                        "🚨 CRITICAL DUPLICATE ELEMENT ERROR DETECTED:",
+                        f"The previous XML contains duplicate '{duplicated_element}' elements with the same name.",
+                        "",
+                        "🔍 DUPLICATE ELEMENT FIX INSTRUCTIONS:",
+                        f"1. Scan the previous XML for ALL <{duplicated_element}> elements",
+                        f"2. Look for multiple <{duplicated_element}> elements that have the same <name> value",
+                        f"3. REMOVE the duplicate <{duplicated_element}> elements - keep only ONE of each unique name",
+                        f"4. If the duplicate logic is needed, CONSOLIDATE it into a single <{duplicated_element}> element",
+                        f"5. Ensure each remaining <{duplicated_element}> element has a UNIQUE <name> within the Flow",
+                        "",
+                        "⚠️ CRITICAL: Salesforce Flow metadata does NOT allow duplicate element names within the same element type.",
+                        f"You MUST ensure NO two <{duplicated_element}> elements share the same <name> value.",
+                        ""
+                    ])
+                
+                # Add specific fixes if available
+                specific_fixes = error_analysis.get('specific_fixes_needed', [])
+                if specific_fixes:
+                    prompt_parts.extend([
+                        "🔧 SPECIFIC FIXES REQUIRED:",
+                        "These are the exact issues you MUST fix in the Flow XML:"
+                    ])
+                    for i, fix in enumerate(specific_fixes, 1):
+                        prompt_parts.append(f"{i}. {fix}")
+                    prompt_parts.extend([
+                        "",
+                        "⚠️ CRITICAL: Apply ALL fixes listed above - these address the exact deployment error.",
+                        ""
+                    ])
                 
                 if error_analysis.get('api_name_issues'):
                     prompt_parts.extend([
@@ -870,17 +1015,58 @@ ALWAYS set the Flow status to 'Active' - use <status>Active</status> in your XML
 NEVER use <status>Draft</status> - ALWAYS use <status>Active</status>
 ALWAYS include <status>Active</status> in your Flow XML to deploy the Flow in an active state.
 
+CRITICAL SALESFORCE FLOW RESTRICTIONS:
+1. COLLECTION VARIABLES:
+   - Collection variables CANNOT be used directly in inputAssignments
+   - Use Assignment elements to add items to collections
+   - In Get Records, use outputReference for the collection variable
+   - In Create/Update Records, reference the collection variable directly as the input
+   - NEVER use collection variables in individual field assignments
+
+2. ELEMENT REFERENCES:
+   - All element references must point to actual elements that exist in the flow
+   - Element names are case-sensitive and must match exactly
+   - Use proper syntax: elementName.fieldName or elementName.variableName
+   - For Get Records elements, reference the count using: elementName (not elementName.Count)
+
+3. VARIABLE USAGE:
+   - Record variables for individual records
+   - Collection variables for multiple records  
+   - Number variables for counts/calculations
+   - Text variables for strings
+   - Boolean variables for true/false values
+
+4. DUPLICATE ELEMENTS (CRITICAL XML VALIDATION):
+   - NEVER create duplicate XML elements with the same name within the same element type
+   - Each element type (recordLookups, recordCreates, recordUpdates, etc.) must have unique names
+   - If you see duplicate elements in previous XML, REMOVE the duplicates and keep only one
+   - Example: If there are two <recordLookups> elements with the same <name>, keep only one
+   - Consolidate duplicate logic into a single element rather than creating duplicates
+   - Review the entire XML structure to ensure no element names are repeated within their type
+
 COMMON DEPLOYMENT FIXES:
 - API names must be alphanumeric and start with a letter
 - Remove spaces, hyphens, and special characters from API names
-- Ensure all element references are valid
+- Ensure all element references are valid and point to existing elements
 - Include required flow structure elements
 - Use proper XML formatting and indentation
+- For aggregating/counting: Use Get Records with collection output, then reference the collection size
+- ELIMINATE DUPLICATE ELEMENTS: Check for and remove any duplicate elements (same name within same type)
 
 FAILURE LEARNING:
 - If this is a retry attempt, you will see specific error analysis and fixes needed
 - Apply ALL the required fixes mentioned in the retry context
-- Learn from the previous attempt's failures and avoid repeating them"""
+- Learn from the previous attempt's failures and avoid repeating them
+- Pay special attention to collection variable usage restrictions
+- Verify all element references are correct and point to existing elements
+- SPECIAL ATTENTION: If the error mentions "duplicate" or "duplicated", carefully scan the XML for duplicate elements and remove them
+
+FAILURE LEARNING:
+- If this is a retry attempt, you will see specific error analysis and fixes needed
+- Apply ALL the required fixes mentioned in the retry context
+- Learn from the previous attempt's failures and avoid repeating them
+- Pay special attention to collection variable usage restrictions
+- Verify all element references are correct and point to existing elements"""
 
             messages = [
                 SystemMessage(content=xml_system_prompt),
@@ -1223,6 +1409,124 @@ FAILURE LEARNING:
         # Method removed - using simplified approach  
         pass
 
+    def update_memory_with_deployment_result(self, flow_api_name: str, attempt_number: int, deployment_success: bool, deployment_errors: Optional[List[Any]] = None, error_message: str = "") -> None:
+        """Update memory with deployment results - critical for learning from deployment failures"""
+        memory = self._get_flow_memory(flow_api_name)
+        
+        try:
+            # Find the attempt to update
+            target_attempt = None
+            for i, attempt in enumerate(reversed(memory.attempts)):
+                if attempt.get('retry_attempt') == attempt_number:
+                    target_attempt = attempt
+                    break
+            
+            if target_attempt:
+                # Update success status based on deployment
+                old_success = target_attempt.get('success', False)
+                target_attempt['success'] = deployment_success
+                
+                # Add deployment error details if failed
+                if not deployment_success:
+                    # Convert deployment errors to validation error format for consistency
+                    validation_errors = []
+                    if deployment_errors:
+                        for error in deployment_errors:
+                            if isinstance(error, dict):
+                                validation_errors.append({
+                                    'error_type': 'deployment_error',
+                                    'error_message': error.get('problem', str(error)),
+                                    'component': error.get('fullName', 'Unknown'),
+                                    'component_type': error.get('componentType', 'Unknown')
+                                })
+                            else:
+                                validation_errors.append({
+                                    'error_type': 'deployment_error', 
+                                    'error_message': str(error),
+                                    'component': 'Unknown',
+                                    'component_type': 'Unknown'
+                                })
+                    
+                    target_attempt['validation_errors'] = validation_errors
+                    target_attempt['error_message'] = error_message or f"Deployment failed with {len(validation_errors)} errors"
+                    
+                    # Update failed patterns with deployment errors
+                    for error in validation_errors[:3]:
+                        error_type = error.get('error_type', 'deployment_error')
+                        error_msg = error.get('error_message', '')[:80]
+                        pattern = f"Deployment error: {error_type} - {error_msg}"
+                        if pattern not in memory.failed_patterns:
+                            memory.failed_patterns.append(pattern)
+                
+                # Update patterns based on success/failure change
+                if old_success != deployment_success:
+                    if old_success and not deployment_success:
+                        # Was marked successful but deployment failed
+                        self._remove_false_success_patterns(memory, target_attempt)
+                    elif not old_success and deployment_success:
+                        # Was marked failed but deployment succeeded
+                        self._add_success_patterns(memory, target_attempt)
+                
+                status_msg = "SUCCESS" if deployment_success else "FAILED"
+                logger.info(f"Updated memory attempt #{attempt_number} with deployment result ({status_msg}) for flow: {flow_api_name}")
+                
+            else:
+                logger.warning(f"Could not find attempt #{attempt_number} in memory to update with deployment result")
+                
+        except Exception as e:
+            logger.warning(f"Failed to update memory with deployment result: {str(e)}")
+    
+    def _remove_false_success_patterns(self, memory: FlowBuildingMemory, attempt_data: Dict[str, Any]) -> None:
+        """Remove patterns that were added for a false success"""
+        try:
+            # Remove patterns that would have been added for this attempt
+            xml_pattern = f"Generated valid XML of length {len(attempt_data.get('flow_xml', ''))}"
+            if xml_pattern in memory.successful_patterns:
+                memory.successful_patterns.remove(xml_pattern)
+            
+            elements = attempt_data.get('elements_created', [])
+            if elements:
+                element_pattern = f"Successfully created elements: {', '.join(elements)}"
+                if element_pattern in memory.successful_patterns:
+                    memory.successful_patterns.remove(element_pattern)
+            
+            practices = attempt_data.get('best_practices_applied', [])
+            if practices:
+                practice_pattern = f"Applied best practices: {', '.join(practices)}"
+                if practice_pattern in memory.successful_patterns:
+                    memory.successful_patterns.remove(practice_pattern)
+                    
+            # Remove key insight about this retry succeeding
+            retry_insight = f"Retry attempt #{attempt_data.get('retry_attempt', 1)} succeeded - this approach should be preserved"
+            if retry_insight in memory.key_insights:
+                memory.key_insights.remove(retry_insight)
+                
+        except Exception as e:
+            logger.warning(f"Failed to remove false success patterns: {str(e)}")
+    
+    def _add_success_patterns(self, memory: FlowBuildingMemory, attempt_data: Dict[str, Any]) -> None:
+        """Add success patterns for a newly validated successful attempt"""
+        try:
+            # Add patterns that should be added for this successful attempt
+            if attempt_data.get('flow_xml'):
+                xml_length = len(attempt_data['flow_xml'])
+                memory.successful_patterns.append(f"Generated valid XML of length {xml_length}")
+            
+            elements = attempt_data.get('elements_created', [])
+            if elements:
+                memory.successful_patterns.append(f"Successfully created elements: {', '.join(elements)}")
+            
+            practices = attempt_data.get('best_practices_applied', [])
+            if practices:
+                memory.successful_patterns.append(f"Applied best practices: {', '.join(practices)}")
+            
+            # Add key insight if this was a retry
+            if attempt_data.get('retry_attempt', 1) > 1:
+                memory.key_insights.append(f"Retry attempt #{attempt_data['retry_attempt']} succeeded - this approach should be preserved")
+                
+        except Exception as e:
+            logger.warning(f"Failed to add success patterns: {str(e)}")
+
     def update_memory_with_validation_result(self, flow_api_name: str, attempt_number: int, validation_passed: bool, validation_errors: Optional[List[Any]] = None) -> None:
         """Update the most recent memory entry with validation results - CRITICAL FOR PREVENTING REGRESSION"""
         memory = self._get_flow_memory(flow_api_name)
@@ -1282,57 +1586,6 @@ FAILURE LEARNING:
                 
         except Exception as e:
             logger.warning(f"Failed to update memory with validation result: {str(e)}")
-    
-    def _remove_false_success_patterns(self, memory: FlowBuildingMemory, attempt_data: Dict[str, Any]) -> None:
-        """Remove patterns that were added for a false success"""
-        try:
-            # Remove patterns that would have been added for this attempt
-            xml_pattern = f"Generated valid XML of length {len(attempt_data.get('flow_xml', ''))}"
-            if xml_pattern in memory.successful_patterns:
-                memory.successful_patterns.remove(xml_pattern)
-            
-            elements = attempt_data.get('elements_created', [])
-            if elements:
-                element_pattern = f"Successfully created elements: {', '.join(elements)}"
-                if element_pattern in memory.successful_patterns:
-                    memory.successful_patterns.remove(element_pattern)
-            
-            practices = attempt_data.get('best_practices_applied', [])
-            if practices:
-                practice_pattern = f"Applied best practices: {', '.join(practices)}"
-                if practice_pattern in memory.successful_patterns:
-                    memory.successful_patterns.remove(practice_pattern)
-                    
-            # Remove key insight about this retry succeeding
-            retry_insight = f"Retry attempt #{attempt_data.get('retry_attempt', 1)} succeeded - this approach should be preserved"
-            if retry_insight in memory.key_insights:
-                memory.key_insights.remove(retry_insight)
-                
-        except Exception as e:
-            logger.warning(f"Failed to remove false success patterns: {str(e)}")
-    
-    def _add_success_patterns(self, memory: FlowBuildingMemory, attempt_data: Dict[str, Any]) -> None:
-        """Add success patterns for a newly validated successful attempt"""
-        try:
-            # Add patterns that should be added for this successful attempt
-            if attempt_data.get('flow_xml'):
-                xml_length = len(attempt_data['flow_xml'])
-                memory.successful_patterns.append(f"Generated valid XML of length {xml_length}")
-            
-            elements = attempt_data.get('elements_created', [])
-            if elements:
-                memory.successful_patterns.append(f"Successfully created elements: {', '.join(elements)}")
-            
-            practices = attempt_data.get('best_practices_applied', [])
-            if practices:
-                memory.successful_patterns.append(f"Applied best practices: {', '.join(practices)}")
-            
-            # Add key insight if this was a retry
-            if attempt_data.get('retry_attempt', 1) > 1:
-                memory.key_insights.append(f"Retry attempt #{attempt_data['retry_attempt']} succeeded - this approach should be preserved")
-                
-        except Exception as e:
-            logger.warning(f"Failed to add success patterns: {str(e)}")
 
 
 def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> AgentWorkforceState:
@@ -1361,6 +1614,22 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
                 print(f"🧠 MEMORY: Will include context from previous attempts")
                 print(f"🔧 Will rebuild flow addressing previous deployment failure")
                 print(f"🎯 Using unified RAG approach with integrated failure context and memory")
+                
+                # Show specific fixes that will be applied
+                specific_fixes = flow_build_request.retry_context.get('specific_fixes_needed', [])
+                if specific_fixes:
+                    print(f"🛠️  RETRY FIXES to apply in this attempt:")
+                    for i, fix in enumerate(specific_fixes[:5], 1):  # Show first 5 fixes
+                        print(f"      {i}. {fix}")
+                    if len(specific_fixes) > 5:
+                        print(f"      ... and {len(specific_fixes) - 5} more fixes")
+                
+                # Show deployment error being addressed
+                deployment_error = flow_build_request.retry_context.get('deployment_error', '')
+                if deployment_error:
+                    truncated_error = deployment_error[:150] + "..." if len(deployment_error) > 150 else deployment_error
+                    print(f"📋 ADDRESSING DEPLOYMENT ERROR: {truncated_error}")
+                
             else:
                 print("📝 INITIAL ATTEMPT: Using unified RAG approach")
                 print("🧠 MEMORY: Starting fresh memory tracking for this flow")
@@ -1383,6 +1652,28 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
             # The method automatically handles user story, RAG knowledge, memory context, and optional retry context
             flow_response = agent.generate_flow_with_rag(flow_build_request)
             
+            # Enhanced debugging for the generated Flow XML
+            if flow_response.success and flow_response.flow_xml:
+                xml_length = len(flow_response.flow_xml)
+                xml_snippet = flow_response.flow_xml[:200].replace('\n', ' ').replace('\r', ' ')
+                
+                print(f"📄 GENERATED FLOW XML:")
+                print(f"   XML Length: {xml_length} characters")
+                print(f"   XML Preview: {xml_snippet}...")
+                
+                if flow_build_request.retry_context:
+                    retry_attempt = flow_build_request.retry_context.get('retry_attempt', 1)
+                    print(f"   🔄 This is UPDATED XML for retry #{retry_attempt}")
+                    print(f"   🛠️  Applied fixes to address deployment failure")
+                    
+                    # Show what elements were created/modified
+                    if flow_response.elements_created:
+                        print(f"   🧱 Elements created: {', '.join(flow_response.elements_created)}")
+                    if flow_response.variables_created:
+                        print(f"   📊 Variables created: {', '.join(flow_response.variables_created)}")
+                else:
+                    print(f"   🆕 This is INITIAL XML for first attempt")
+                    
             # Save updated memory data back to state for persistence
             updated_memory_data = agent.get_memory_data_for_persistence()
             response_updates["flow_builder_memory_data"] = updated_memory_data
@@ -1399,8 +1690,10 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
                     print(f"   🎯 Successfully rebuilt flow addressing deployment issues (retry #{retry_attempt})")
                     print(f"   🔄 Maintained business requirements while fixing deployment errors")
                     print(f"   🧠 Incorporated insights from previous attempts")
+                    print(f"   ➡️  This UPDATED XML will now go to deployment agent")
                 else:
                     print(f"   📋 Successfully built flow meeting user story requirements")
+                    print(f"   ➡️  This INITIAL XML will now go to deployment agent")
             else:
                 print(f"❌ Flow building failed: {flow_response.error_message}")
                 print(f"🧠 MEMORY: Saved failed attempt to memory for future learning")

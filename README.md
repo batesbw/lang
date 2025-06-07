@@ -1,12 +1,34 @@
 # Salesforce Agent Workforce
 
-An intelligent multi-agent system powered by LangChain and LangGraph that automates Salesforce Flow development, deployment, and testing. This workforce of specialized agents collaborates to transform natural language requirements into deployed Salesforce Flows.
+An intelligent multi-agent system powered by LangChain and LangGraph that automates Salesforce Flow development, deployment, and testing using a **Test-Driven Development (TDD) approach**. This workforce of specialized agents collaborates to transform natural language requirements into fully tested, deployed Salesforce Flows.
+
+## 🧪 NEW: Test-Driven Development Approach
+
+**Revolutionary TDD Workflow**: We've completely reimagined the agent orchestration to follow Test-Driven Development principles:
+
+```
+🔄 TDD WORKFLOW:
+1. 🧪 TestDesigner → Creates comprehensive test scenarios from requirements
+2. 🚀 Test Deployment → Deploys Apex test classes to Salesforce
+3. 🏗️  Flow Builder → Builds Flow to make tests pass (using test context)
+4. 📦 Flow Deployment → Deploys the Flow to complete TDD cycle
+5. ✅ Validation → Tests validate Flow behavior automatically
+```
+
+### Key TDD Benefits:
+- **Quality First**: Tests define requirements before code is written
+- **Better Coverage**: All Flow functionality is validated by tests
+- **Faster Debugging**: Clear test failures guide development
+- **Confidence**: Deployed Flows are guaranteed to meet acceptance criteria
+
+### TDD Context Integration:
+The Flow Builder now receives **test scenarios and deployed test classes** as input, ensuring the generated Flow satisfies all test requirements. This creates a tight feedback loop between requirements, tests, and implementation.
 
 ## 🎯 Project Status
 
-**Current Phase**: Phase 2 - Enhanced FlowBuilderAgent Complete ✅  
-**Latest Milestone**: Enhanced FlowBuilderAgent with Natural Language Processing ✅  
-**Next Steps**: FlowTestAgent Implementation & Iterative Workflows
+**Current Phase**: Phase 3 - Test-Driven Development Approach ✅  
+**Latest Milestone**: Complete TDD Workflow Implementation ✅  
+**Next Steps**: Enhanced test analytics and validation reporting
 
 ## 🚀 Quick Start
 
@@ -129,30 +151,44 @@ Transform how Salesforce professionals work with Flows by providing:
 - **Capabilities**: Metadata API deployment, status tracking
 - **Status**: ✅ Implemented
 
-### Planned Agents (Phase 2+)
+#### 🧪 TestDesignerAgent ⭐ NEW!
+- **Purpose**: Generate comprehensive Apex test scenarios and classes
+- **Capabilities**:
+  - 📋 User story analysis and test scenario generation
+  - 🧪 Apex test class creation with proper patterns
+  - 🎯 Test data setup and teardown methods
+  - ✅ Positive, negative, and edge case coverage
+- **Status**: ✅ Implemented in TDD Phase
+
+### Planned Agents (Phase 3+)
 
 #### 🧪 FlowTestAgent
 - **Purpose**: Automated Flow testing and validation
 - **Capabilities**: API testing, UI testing, assertion checking
-- **Status**: 📋 Next Priority
+- **Status**: 📋 Future Enhancement
 
-## 🔄 Current Workflow
+## 🔄 TDD Workflow
 
-**Enhanced Workflow (Phase 2)**:
+**Test-Driven Development Workflow (Phase 3)**:
 ```
-START → AuthenticationAgent → Enhanced FlowBuilderAgent → DeploymentAgent → END
+START → Authentication → TestDesigner → Test Deployment → Flow Builder → Flow Deployment → END
 ```
 
-The enhanced workflow automatically:
-1. Authenticates to your Salesforce org
-2. **NEW**: Processes natural language requirements using advanced NLP
-3. **NEW**: Consults knowledge base for Salesforce best practices
-4. **NEW**: Generates sophisticated Flow XML with multiple elements
-5. **NEW**: Validates and repairs common deployment errors
-6. Deploys the Flow to Salesforce with comprehensive guidance
-7. Reports success/failure with detailed recommendations
+The TDD workflow automatically:
+1. **Authenticates** to your Salesforce org
+2. **🧪 TestDesigner**: Analyzes requirements and creates comprehensive test scenarios
+3. **🚀 Test Deployment**: Deploys Apex test classes to establish expected behavior
+4. **🏗️  Flow Builder**: Generates Flow XML designed to make tests pass (with TDD context)
+5. **📦 Flow Deployment**: Deploys the Flow to complete the TDD cycle
+6. **✅ Validation**: Tests are already in place to validate Flow behavior
 
-## 🌟 Phase 2 Enhancements
+### TDD Process Details:
+- **Test-First**: Test scenarios define the expected behavior before Flow development
+- **Context-Aware**: Flow Builder receives test scenarios as input to guide development
+- **Quality Assurance**: Every deployed Flow has comprehensive test coverage
+- **Continuous Validation**: Tests can be run anytime to verify Flow behavior
+
+## 🌟 Phase 3: Test-Driven Development
 
 ### Enhanced FlowBuilderAgent Features
 

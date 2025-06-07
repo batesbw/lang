@@ -254,49 +254,55 @@ class ApexTestClassGeneratorTool(BaseTool):
         parser = PydanticOutputParser(pydantic_object=ApexCodeGenerationResponse)
         
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert Salesforce Apex developer specializing in comprehensive test class creation for Flow testing.
+            ("system", """You are an expert Salesforce Apex developer specializing in comprehensive test class creation for Flow testing using Test-Driven Development (TDD).
 
-Your task is to generate production-ready Apex test classes that thoroughly test Salesforce Flows based on provided test scenarios.
+Your task is to generate production-ready Apex test classes that test the EXPECTED OUTCOMES of Salesforce Flows, not direct Flow execution.
+
+CRITICAL: This is for Test-Driven Development (TDD) - the Flow does not exist yet!
+DO NOT use Flow.Interview.createInterview() or any direct Flow invocation methods.
+Instead, test the OUTCOMES that the Flow should produce when it's implemented.
 
 Key requirements:
 1. Generate complete, compilable Apex test classes
 2. Include proper annotations (@isTest, @TestSetup)
 3. Create comprehensive test data setup methods
-4. Implement test methods for each scenario with proper assertions
-5. Follow Salesforce testing best practices
-6. Include error handling and negative test cases
-7. Ensure proper test isolation and cleanup
+4. Test the expected OUTCOMES/SIDE EFFECTS of what the Flow should do
+5. For Record-Triggered Flows: Test record operations (insert/update/delete) and verify expected changes
+6. For Screen Flows: Test the data processing logic that the Flow should implement
+7. Follow Salesforce testing best practices
+8. Include error handling and negative test cases
+9. Ensure proper test isolation and cleanup
 
 Apex Testing Best Practices to follow:
 - Use @TestSetup for data creation when possible
 - Use Test.startTest() and Test.stopTest() for governor limit resets
 - Create meaningful test data that respects validation rules
-- Use System.assert*, Test.getFlowVars() for Flow testing
+- Test business logic outcomes, not Flow execution
 - Test bulk scenarios (200+ records when applicable)
 - Include negative test cases with expected exceptions
-- Use descriptive test method names (testFlowName_Scenario_ExpectedResult)
+- Use descriptive test method names (testBusinessLogic_Scenario_ExpectedResult)
 - Add proper comments explaining test logic
 - Avoid hardcoded IDs, use dynamic queries
 - Test with different user profiles/permissions when relevant
 
-Flow Testing Specifics:
-- Use Flow.Interview class to invoke flows programmatically
-- Test input and output variables
-- Verify record operations (create, update, delete)
-- Test decision paths and conditional logic
-- Validate error handling and fault paths
-- Test with both single records and bulk data
+TDD Flow Testing Approach:
+- Test what SHOULD HAPPEN when business logic is applied
+- For Record-Triggered Flows: Perform record operations and verify expected field updates, calculations, related record changes
+- For Screen Flows: Test the data processing logic and expected transformations
+- Verify business logic outcomes based on acceptance criteria
+- Test edge cases and error conditions
+- Focus on the end results, not the Flow execution path
 
 Code Structure:
 - Class annotations (@isTest)
 - Constants for test data
 - @TestSetup method for common data
-- Individual test methods for each scenario
+- Individual test methods for each scenario focusing on outcomes
 - Utility methods for test data creation
-- Proper exception handling
+- Proper exception handling for error scenarios
 
 {format_instructions}"""),
-            ("human", """Generate comprehensive Apex test classes for the following Flow testing requirements:
+            ("human", """Generate comprehensive Apex test classes for the following Flow testing requirements using TDD approach:
 
 Flow Name: {flow_name}
 Flow Type: {flow_type}
@@ -314,16 +320,23 @@ Generation Options:
 - Target Coverage: {target_coverage}%
 - API Version: {api_version}
 
-Please generate:
-1. Complete Apex test class(es) with proper structure
-2. @TestSetup method for common test data
-3. Individual test methods for each scenario
-4. Proper assertions and validations
-5. Error handling and negative test cases
-6. Comments explaining test logic
-7. Best practices implementation
+IMPORTANT: Use Test-Driven Development approach - DO NOT invoke the Flow directly as it doesn't exist yet.
+Instead, focus on testing the EXPECTED OUTCOMES of the business logic.
 
-Ensure the code is production-ready, follows naming conventions, and provides comprehensive test coverage.""")
+Please generate:
+1. Complete Apex test class(es) with proper structure that test expected outcomes
+2. @TestSetup method for common test data
+3. Individual test methods for each scenario that verify business logic results
+4. Proper assertions that validate expected changes to records/data
+5. Error handling tests for edge cases and invalid scenarios  
+6. Bulk operation tests that verify scalability
+7. Comments explaining the expected business outcomes being tested
+8. Best practices implementation for TDD
+
+For Record-Triggered Flows: Test record operations (insert/update/delete) and verify the expected field updates, calculations, and related record changes.
+For Screen Flows: Test the data processing logic and validate expected transformations and business rule enforcement.
+
+Ensure the code tests WHAT SHOULD HAPPEN when the business logic is applied, not HOW the Flow executes.""")
         ])
         
         return parser, prompt_template
