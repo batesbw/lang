@@ -679,19 +679,25 @@ class EnhancedFlowBuilderAgent:
                     prompt_parts.append("")
                 
                 if original_flow_xml:
+                    # Don't truncate the XML - include it all for proper analysis
+                    # But add a clear separator to show where it ends
                     prompt_parts.extend([
-                        "🔍 PREVIOUS FLOW XML (FOR ANALYSIS ONLY - DO NOT COPY):",
-                        f"{original_flow_xml[:1000]}{'...' if len(original_flow_xml) > 1000 else ''}",
+                        "🔍 PREVIOUS FLOW XML (ANALYZE FOR SPECIFIC ERRORS TO FIX):",
+                        "```xml",
+                        original_flow_xml,
+                        "```",
+                        "⚠️ END OF PREVIOUS FLOW XML",
                         ""
                     ])
                 
                 prompt_parts.extend([
                     "🎯 CRITICAL RETRY REQUIREMENTS:",
-                    "1. You MUST fulfill ALL the original business requirements and user story",
-                    "2. You MUST implement ALL the specific fixes listed above",
-                    "3. You MUST avoid ALL the error patterns that caused previous failures",
-                    "4. You MUST maintain the flow's intended business functionality",
-                    "5. You MUST use the memory context to build upon previous learnings",
+                    "1. ANALYZE the previous flow XML above to understand what was implemented",
+                    "2. IDENTIFY the specific errors mentioned in the deployment error",
+                    "3. FIX ONLY those specific errors - do not make unnecessary changes",
+                    "4. PRESERVE all other aspects of the flow that were working correctly",
+                    "5. MAINTAIN the same business logic and flow structure where possible",
+                    "6. ENSURE the flow still fulfills the original user story requirements",
                     ""
                 ])
             
@@ -706,7 +712,7 @@ class EnhancedFlowBuilderAgent:
                 if error_analysis.get('api_name_issues'):
                     prompt_parts.extend([
                         "🏷️ API NAME ISSUES DETECTED:",
-                        "- The previous flow had invalid API names that caused deployment failure",
+                        "- Review API names in the previous XML and fix any that are invalid",
                         "- ALL API names must be alphanumeric and start with a letter",
                         "- NO spaces, hyphens, or special characters allowed",
                         ""
@@ -730,16 +736,28 @@ class EnhancedFlowBuilderAgent:
             
             if specific_fixes:
                 prompt_parts.extend([
-                    "🔧 REQUIRED FIXES (MANDATORY TO IMPLEMENT):",
+                    "🔧 SPECIFIC FIXES REQUIRED:",
+                    "Based on the deployment error, these are the exact issues to address:",
                 ])
                 for i, fix in enumerate(specific_fixes, 1):
                     prompt_parts.append(f"{i}. {fix}")
-                prompt_parts.append("")
+                prompt_parts.extend([
+                    "",
+                    "🎯 FIXING APPROACH:",
+                    "- Take the previous flow XML as your starting point",
+                    "- Make ONLY the minimal changes needed to fix the specific errors listed above",
+                    "- Do NOT redesign or restructure the flow unnecessarily", 
+                    "- Preserve the existing business logic and flow elements where they work",
+                    "- Focus on the root cause of each specific error",
+                    ""
+                ])
             
             if error_patterns:
                 prompt_parts.extend([
                     "⚠️ ERROR PATTERNS TO AVOID:",
                     f"The following patterns caused the previous failure: {', '.join(error_patterns)}",
+                    "- Analyze these patterns in the context of the previous XML",
+                    "- Ensure your fixes address these specific failure patterns",
                     ""
                 ])
             
@@ -752,25 +770,36 @@ class EnhancedFlowBuilderAgent:
             
             if deployment_error:
                 prompt_parts.extend([
-                    "🔥 PREVIOUS DEPLOYMENT ERROR:",
+                    "🔥 SPECIFIC DEPLOYMENT ERROR TO FIX:",
                     deployment_error,
+                    "",
+                    "💡 ERROR ANALYSIS APPROACH:",
+                    "- Read the deployment error message carefully",
+                    "- Locate the problematic elements/sections in the previous XML",
+                    "- Apply the precise fix needed for this specific error",
+                    "- Verify that your fix resolves the exact issue mentioned",
                     ""
                 ])
             
             prompt_parts.extend([
                 "🛠️ DEPLOYMENT SUCCESS CHECKLIST:",
-                "✓ All API names are alphanumeric and start with a letter",
-                "✓ No spaces, hyphens, or special characters in API names", 
-                "✓ All element references are valid and match existing elements",
-                "✓ Flow structure is complete with all required elements",
+                "Review your changes against these criteria:",
+                "✓ The specific deployment error has been addressed",
+                "✓ No unnecessary changes were made to working parts of the flow",
+                "✓ The flow still meets the original business requirements",
+                "✓ All API names are valid (alphanumeric, start with letter, no spaces/hyphens)",
+                "✓ Flow structure and references are correct",
                 "✓ XML is well-formed and follows Salesforce schema",
-                "✓ Flow logic fulfills the business requirements",
                 ""
             ])
             
             prompt_parts.extend([
-                "💡 STRATEGY: Start fresh with the business requirements, design the flow to meet them,",
-                "    then apply all the deployment fixes as you build. Use memory context for guidance.",
+                "💡 FIXING STRATEGY:",
+                "1. ANALYZE - Study the previous XML and identify the problematic sections",
+                "2. LOCATE - Find the exact elements/attributes causing the deployment error",
+                "3. FIX - Make precise, minimal changes to resolve the specific issues",
+                "4. PRESERVE - Keep everything else from the previous flow intact",
+                "5. VALIDATE - Ensure your changes address the deployment error completely",
                 ""
             ])
         
