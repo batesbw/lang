@@ -83,13 +83,14 @@ The Salesforce Agent Workforce now supports user stories and acceptance criteria
       "title": "Account Contact Counter",
       "description": "As a sales manager, I want the number of Contacts directly associated with an Account to appear on the account record, so I can quickly check the size of the Account",
       "acceptance_criteria": [
-        "Count of contacts should update immediately when creating and/or deleting contacts",
+        "Count of contacts should update immediately when creating contacts",
         "Count should be saved the Count_of_Contacts__c field on the Account",
         "If there are no contacts associated with an account, the count should be 0"
       ],
       "priority": "High",
       "business_context": "Staff just need a quick way to view the size of their accounts",
       "affected_objects": ["Account", "Contact"],
+      "field_names": ["Account.Count_of_Contacts__c"],
       "user_personas": ["Sales Manager", "Sales Representative", "Lead Routing Admin"]
     },
     "is_authenticated": false,

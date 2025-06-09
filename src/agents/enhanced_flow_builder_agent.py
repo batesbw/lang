@@ -801,6 +801,43 @@ class EnhancedFlowBuilderAgent:
             f"\n## Flow API Name:\n`{request.flow_api_name}`",
         ]
         
+        # Add user story specific information if available
+        if request.user_story:
+            prompt_parts.extend([
+                "\n## 📋 USER STORY DETAILS:",
+                f"**Title:** {request.user_story.title}",
+                f"**Description:** {request.user_story.description}",
+                f"**Priority:** {request.user_story.priority}",
+            ])
+            
+            if request.user_story.business_context:
+                prompt_parts.append(f"**Business Context:** {request.user_story.business_context}")
+            
+            if request.user_story.acceptance_criteria:
+                prompt_parts.extend([
+                    "\n### 🎯 ACCEPTANCE CRITERIA (Must be addressed in the flow):",
+                    "The flow MUST satisfy ALL of the following acceptance criteria:",
+                ])
+                for i, criteria in enumerate(request.user_story.acceptance_criteria, 1):
+                    prompt_parts.append(f"  {i}. {criteria}")
+            
+            if request.user_story.field_names:
+                prompt_parts.extend([
+                    "\n### 🏷️ REQUIRED FIELD NAMES (Must be used in the flow):",
+                    "The flow MUST reference and work with these specific Salesforce fields:",
+                ])
+                for field in request.user_story.field_names:
+                    prompt_parts.append(f"  • {field}")
+                prompt_parts.append("\nEnsure these fields are properly referenced in flow elements, conditions, assignments, and record operations.")
+            
+            if request.user_story.affected_objects:
+                prompt_parts.extend([
+                    "\n### 📦 AFFECTED OBJECTS:",
+                    f"Objects involved: {', '.join(request.user_story.affected_objects)}"
+                ])
+            
+            prompt_parts.append("")  # Add spacing
+        
         # --- Complete Flow Documentation (Foundational Reference) ---
         if flow_documentation:
             prompt_parts.extend([
@@ -949,7 +986,18 @@ class EnhancedFlowBuilderAgent:
             "5. If this is a retry, fix ALL the specific errors mentioned above",
             "6. Use the documentation and best practices provided above",
             "7. Apply error-specific solutions if provided",
-            "8. Return ONLY the XML - no explanations or markdown",
+        ])
+        
+        # Add user story specific instructions
+        if request.user_story:
+            prompt_parts.extend([
+                "8. MANDATORY: Address ALL acceptance criteria listed above",
+                "9. MANDATORY: Use ALL specified field names in appropriate flow elements",
+                "10. Ensure the flow logic implements the business requirements described in the user story",
+            ])
+        
+        prompt_parts.extend([
+            "11. Return ONLY the XML - no explanations or markdown",
             "",
             "START YOUR RESPONSE WITH: <?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         ])

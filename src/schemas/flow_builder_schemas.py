@@ -42,6 +42,7 @@ class UserStory(BaseModel):
                     "title": "Automate Lead Assignment",
                     "description": "As a sales manager, I want leads to be automatically assigned to the right sales rep so that response time is improved",
                     "acceptance_criteria": ["Leads are assigned within 5 minutes", "Assignment follows territory rules"],
+                    "field_names": ["Lead.Status", "Lead.OwnerId", "Lead.Territory__c", "User.Territory__c"],
                     "priority": "High"
                 }
             ]
@@ -51,6 +52,7 @@ class UserStory(BaseModel):
     title: str = Field(..., description="Title of the user story")
     description: str = Field(..., description="As a [user], I want [goal] so that [benefit]")
     acceptance_criteria: List[str] = Field(..., description="List of acceptance criteria that define when the story is complete")
+    field_names: List[str] = Field(default_factory=list, description="List of specific Salesforce field names (Object.Field format) that should be used in the flow")
     priority: Literal["Critical", "High", "Medium", "Low"] = Field(default="Medium", description="Priority level of the user story")
     business_context: Optional[str] = Field(None, description="Additional business context or background")
     affected_objects: List[str] = Field(default_factory=list, description="Salesforce objects that will be affected")
