@@ -74,9 +74,19 @@ TEST_EXECUTOR_AGENT_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
     - Coverage Target: {coverage_target}%
     - Timeout: {timeout_minutes} minutes
     - Request ID: {request_id}
+    - Salesforce Session: Available in the full_request data
     
-    Please use your apex_test_runner_tool to:
-    1. Execute the specified test classes
+    IMPORTANT: You have been provided with a complete TestExecutorRequest in the full_request parameter.
+    When calling the apex_test_runner_tool, you MUST use this full_request object as the input.
+    
+    The full_request contains all necessary authentication information including:
+    - Salesforce session details (session_id, instance_url, etc.)
+    - Test class names to execute
+    - Coverage targets and timeout settings
+    - Request tracking information
+    
+    Please use your apex_test_runner_tool with the full_request to:
+    1. Execute the specified test classes using the provided Salesforce session
     2. Retrieve detailed test results including pass/fail status, error messages, and stack traces
     3. Collect code coverage information
     4. Analyze the results and provide actionable feedback
@@ -147,13 +157,16 @@ def run_test_executor_agent(state: AgentWorkforceState) -> AgentWorkforceState:
         # Create agent executor
         agent_executor = create_test_executor_agent_executor()
         
-        # Prepare input for agent
+        # Pass the COMPLETE TestExecutorRequest to the agent
+        # The agent will pass this directly to the apex_test_runner_tool
         agent_input = {
+            "request_id": test_request.request_id,
             "test_class_names": test_request.test_class_names,
             "org_alias": test_request.org_alias,
             "coverage_target": test_request.coverage_target,
             "timeout_minutes": test_request.timeout_minutes,
-            "request_id": test_request.request_id
+            "salesforce_session": test_request.salesforce_session.model_dump(),
+            "full_request": test_request.model_dump()  # Include full request for tool
         }
         
         print("🧠 Executing test execution with TestExecutor Agent...")
@@ -180,6 +193,8 @@ def run_test_executor_agent(state: AgentWorkforceState) -> AgentWorkforceState:
             print(f"📈 Retrieved coverage for {len(test_response.code_coverage_results)} classes")
             if test_response.overall_coverage_percentage:
                 print(f"🎯 Overall coverage: {test_response.overall_coverage_percentage}%")
+        else:
+            print(f"⚠️ Test execution completed but no test summary available")
         
         # Clear the request after processing
         updated_state["current_test_executor_request"] = None

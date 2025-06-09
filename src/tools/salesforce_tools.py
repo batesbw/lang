@@ -78,14 +78,44 @@ class SalesforceAuthenticatorTool(BaseTool):
             
             sf = Salesforce(**sf_kwargs)
             
-            # Extract session details
-            # Note: sf.user_id might be an SFType object, so we need to extract the actual ID
-            user_id_str = str(sf.user_id.id) if hasattr(sf.user_id, 'id') else str(sf.user_id) if sf.user_id else "unknown"
+            # Extract session details properly
+            # Note: sf.user_id is an SFType object, we need to extract the actual ID value
+            user_id_str = "unknown"
+            org_id_str = "unknown"
+            
+            try:
+                # Try to get the user ID - it might be an SFType object or a string
+                if hasattr(sf.user_id, 'id'):
+                    user_id_str = str(sf.user_id.id)
+                elif hasattr(sf.user_id, 'get'):
+                    # If it's a dict-like object
+                    user_id_str = str(sf.user_id.get('Id', 'unknown'))
+                else:
+                    # If it's already a string or can be converted
+                    user_id_str = str(sf.user_id) if sf.user_id else "unknown"
+                
+                # Extract org ID from user ID (first 15 characters) or query it
+                if user_id_str != "unknown" and len(user_id_str) >= 15:
+                    org_id_str = user_id_str[:15]
+                else:
+                    # Try to get org info directly from Salesforce
+                    try:
+                        org_info = sf.query("SELECT Id FROM Organization LIMIT 1")
+                        if org_info.get('records'):
+                            org_id_str = org_info['records'][0]['Id']
+                    except:
+                        org_id_str = "unknown"
+                        
+            except Exception as e:
+                print(f"⚠️ Warning: Could not extract user/org IDs: {e}")
+                # Use fallback values
+                user_id_str = "unknown"
+                org_id_str = "unknown"
             
             session_details = SalesforceSessionDetails(
                 session_id=sf.session_id,  # This is a proper session ID that works with Metadata API
                 instance_url=sf.sf_instance,
-                org_id=user_id_str[:15] if user_id_str != "unknown" else "unknown",  # Extract org ID from user ID (first 15 chars)
+                org_id=org_id_str,
                 user_id=user_id_str,
                 org_alias=org_alias
             )
