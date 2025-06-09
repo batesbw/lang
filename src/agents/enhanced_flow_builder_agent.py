@@ -731,7 +731,10 @@ class EnhancedFlowBuilderAgent:
         for query in error_queries[:3]:  # Limit to top 3 most specific queries
             logger.info(f"🔍 Error-specific RAG query: '{query}'")
             try:
-                error_docs = search_flow_knowledge_base(query, k=2)  # Get 2 docs per query
+                error_docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "max_results": 2
+                })
                 if error_docs:
                     logger.info(f"📚 Found {len(error_docs)} error-specific documents for query")
                     all_error_docs.extend(error_docs)
