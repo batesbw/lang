@@ -3,7 +3,6 @@ from typing import Optional
 from langchain_core.language_models import BaseLanguageModel
 
 from src.tools.salesforce_deployer_tool import SalesforceDeployerTool
-from src.tools.deployment_error_logger_tool import DeploymentErrorLoggerTool, DeploymentErrorLogRequest
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 from src.state.agent_workforce_state import AgentWorkforceState # Updated path
 
@@ -13,8 +12,7 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
 
     This agent takes a DeploymentRequest from the state, uses the
     SalesforceDeployerTool to deploy multiple metadata components to Salesforce,
-    and updates the state with a DeploymentResponse. If deployment fails,
-    it automatically logs the error to deploymentErrors/errorsDB.md with web search suggestions.
+    and updates the state with a DeploymentResponse.
     """
     print("----- DEPLOYMENT AGENT -----")
     deployment_request_dict = state.get("current_deployment_request")
@@ -95,23 +93,6 @@ def run_deployment_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> 
                         component_type = error.get('componentType', 'Unknown')
                         problem = error.get('problem', 'Unknown error')
                         print(f"     - {component_name} ({component_type}): {problem}")
-                
-                # NEW: Log deployment error with web search suggestions
-                try:
-                    print("📝 Logging deployment error with web search suggestions...")
-                    error_logger = DeploymentErrorLoggerTool()
-                    
-                    log_request = DeploymentErrorLogRequest(
-                        deployment_response=deployment_response,
-                        components=deployment_request.components
-                    )
-                    
-                    log_result = error_logger._run(log_request)
-                    print(f"   ✅ Error logging result: {log_result}")
-                    
-                except Exception as log_error:
-                    print(f"   ⚠️ Failed to log deployment error: {str(log_error)}")
-                    # Don't fail the deployment process if logging fails
 
             # Convert response to dict for state storage
             response_updates["current_deployment_response"] = deployment_response.model_dump()
