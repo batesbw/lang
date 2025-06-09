@@ -1481,9 +1481,10 @@ def create_workflow() -> StateGraph:
     workflow.add_node("deployment", deployment_node)
     
     # Add web search nodes only if TAVILY_API_KEY is available
-    if WEB_SEARCH_AVAILABLE:
-        workflow.add_node("prepare_web_search_request", prepare_web_search_request)
-        workflow.add_node("web_search", web_search_node)
+    # NOTE: Web search functionality temporarily disabled
+    # if WEB_SEARCH_AVAILABLE:
+    #     workflow.add_node("prepare_web_search_request", prepare_web_search_request)
+    #     workflow.add_node("web_search", web_search_node)
     
     workflow.add_node("record_cycle", record_build_deploy_cycle)
     workflow.add_node("prepare_retry_flow_request", prepare_retry_flow_request)
@@ -1549,33 +1550,45 @@ def create_workflow() -> StateGraph:
     workflow.add_edge("deployment", "record_cycle")
     
     # Flow deployment retry logic
-    if WEB_SEARCH_AVAILABLE:
-        # With web search: deployment failures → search for solutions → retry
-        # Successful deployment → END (TDD complete)
-        workflow.add_conditional_edges(
-            "record_cycle",
-            should_continue_after_deployment,
-            {
-                "search_for_solutions": "prepare_web_search_request",
-                "direct_retry": "prepare_retry_flow_request",
-                END: END
-            }
-        )
-        
-        # Web search flow: prepare search → execute search → prepare retry
-        workflow.add_edge("prepare_web_search_request", "web_search")
-        workflow.add_edge("web_search", "prepare_retry_flow_request")
-    else:
-        # Without web search: deployment failures → direct retry
-        # Successful deployment → END (TDD complete)
-        workflow.add_conditional_edges(
-            "record_cycle",
-            should_continue_after_deployment,
-            {
-                "direct_retry": "prepare_retry_flow_request",
-                END: END
-            }
-        )
+    # NOTE: Web search functionality temporarily disabled - using direct retry only
+    # if WEB_SEARCH_AVAILABLE:
+    #     # With web search: deployment failures → search for solutions → retry
+    #     # Successful deployment → END (TDD complete)
+    #     workflow.add_conditional_edges(
+    #         "record_cycle",
+    #         should_continue_after_deployment,
+    #         {
+    #             "search_for_solutions": "prepare_web_search_request",
+    #             "direct_retry": "prepare_retry_flow_request",
+    #             END: END
+    #         }
+    #     )
+    #     
+    #     # Web search flow: prepare search → execute search → prepare retry
+    #     workflow.add_edge("prepare_web_search_request", "web_search")
+    #     workflow.add_edge("web_search", "prepare_retry_flow_request")
+    # else:
+    #     # Without web search: deployment failures → direct retry
+    #     # Successful deployment → END (TDD complete)
+    #     workflow.add_conditional_edges(
+    #         "record_cycle",
+    #         should_continue_after_deployment,
+    #         {
+    #             "direct_retry": "prepare_retry_flow_request",
+    #             END: END
+    #         }
+    #     )
+    
+    # Without web search: deployment failures → direct retry
+    # Successful deployment → END (TDD complete)
+    workflow.add_conditional_edges(
+        "record_cycle",
+        should_continue_after_deployment,
+        {
+            "direct_retry": "prepare_retry_flow_request",
+            END: END
+        }
+    )
     
     # Flow deployment retry loop
     workflow.add_edge("prepare_retry_flow_request", "flow_builder")
