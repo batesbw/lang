@@ -62,7 +62,7 @@ def create_authentication_agent_executor() -> AgentExecutor:
 def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     Executes the authentication agent and updates the graph state based on the outcome.
-    It expects 'current_auth_request' to be set in the input state.
+    It expects 'current_auth_request' to be set in the input state, or falls back to ORG_ALIAS env var.
     """
     print("--- Running Authentication Agent ---")
     
@@ -75,17 +75,30 @@ def run_authentication_agent(state: AgentWorkforceState) -> AgentWorkforceState:
     print(f"DEBUG: auth_request_dict type = {type(auth_request_dict)}")
     print(f"DEBUG: auth_request_dict truthiness = {bool(auth_request_dict)}")
 
+    # If no auth_request in state, check for default ORG_ALIAS environment variable
     if not auth_request_dict:
-        print("Authentication Agent: No auth_request provided in current_auth_request.")
-        updated_state = state.copy()
-        auth_response = AuthenticationResponse(
-            success=False,
-            error_message="Authentication Agent Error: No auth_request provided for authentication."
-        )
-        updated_state["current_auth_response"] = auth_response.model_dump()
-        updated_state["is_authenticated"] = False
-        updated_state["salesforce_session"] = None
-        return updated_state
+        default_org_alias = os.getenv("ORG_ALIAS")
+        print(f"DEBUG: No auth_request in state, checking ORG_ALIAS env var = {default_org_alias}")
+        
+        if default_org_alias:
+            print(f"Authentication Agent: Using default org alias from environment: {default_org_alias}")
+            # Create auth_request from environment variable
+            auth_request_dict = {
+                "org_alias": default_org_alias,
+                "credential_type": "env_alias"
+            }
+            print(f"DEBUG: Created auth_request_dict from env: {auth_request_dict}")
+        else:
+            print("Authentication Agent: No auth_request provided in current_auth_request and no ORG_ALIAS environment variable set.")
+            updated_state = state.copy()
+            auth_response = AuthenticationResponse(
+                success=False,
+                error_message="Authentication Agent Error: No auth_request provided and no ORG_ALIAS environment variable set. Please provide an org_alias to authenticate."
+            )
+            updated_state["current_auth_response"] = auth_response.model_dump()
+            updated_state["is_authenticated"] = False
+            updated_state["salesforce_session"] = None
+            return updated_state
 
     try:
         # Convert dict back to Pydantic model

@@ -1,13 +1,17 @@
 """
-Enhanced Flow Builder Agent with RAG Integration and Failure Learning
+Enhanced Flow Builder Agent with RAG Integration and Failure Learning (RAG currently disabled)
 
-This agent leverages RAG (Retrieval-Augmented Generation) to build better Salesforce flows by:
-1. Searching the knowledge base for best practices and patterns
-2. Finding similar sample flows for reference
-3. Using retrieved context to generate more accurate and robust flows
-4. Learning from documented solutions and common patterns
-5. Learning from deployment failures and applying fixes
-6. Maintaining conversational memory across retry attempts with preserved successful patterns
+This agent leverages enhanced features to build better Salesforce flows:
+1. Conversational memory from past attempts
+2. Learning from deployment failures and applying fixes  
+3. Maintaining successful patterns across retry attempts
+4. Flow XML generation with LLM and structured error learning
+
+RAG functionality temporarily disabled:
+- Knowledge base search for best practices and patterns
+- Similar sample flow retrieval
+- Error-specific documentation lookup
+- Enhanced foundational knowledge integration
 """
 
 import os
@@ -18,7 +22,6 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 import xml.etree.ElementTree as ET
 
-from ..tools.rag_tools import RAG_TOOLS, search_flow_knowledge_base, find_similar_sample_flows, enhance_initial_flow_knowledge
 from ..tools.flow_builder_tools import BasicFlowXmlGeneratorTool
 from ..schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from ..state.agent_workforce_state import AgentWorkforceState
@@ -568,83 +571,85 @@ class EnhancedFlowBuilderAgent:
         }
         
         try:
+            # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
             # Enhanced: Get foundational Flow Metadata API knowledge for initial attempts
-            from ..tools.rag_tools import enhance_initial_flow_knowledge
-            foundational_knowledge = enhance_initial_flow_knowledge.invoke({
-                "flow_type": analysis.get("primary_use_case", "all"),
-                "use_case": analysis.get("primary_use_case")
-            })
+            # from ..tools.rag_tools import enhance_initial_flow_knowledge
+            # foundational_knowledge = enhance_initial_flow_knowledge.invoke({
+            #     "flow_type": analysis.get("primary_use_case", "all"),
+            #     "use_case": analysis.get("primary_use_case")
+            # })
             
-            if foundational_knowledge and not foundational_knowledge.get("error"):
-                # Extract foundational concepts for better XML structure understanding
-                if foundational_knowledge.get("foundational_concepts"):
-                    knowledge["foundational_knowledge"].extend(foundational_knowledge["foundational_concepts"])
-                
-                # Extract Metadata API guidelines for proper Flow XML generation
-                if foundational_knowledge.get("metadata_api_guidelines"):
-                    knowledge["foundational_knowledge"].extend(foundational_knowledge["metadata_api_guidelines"])
-                
-                # Extract preventive best practices to avoid common errors
-                if foundational_knowledge.get("preventive_best_practices"):
-                    knowledge["preventive_guidance"].extend(foundational_knowledge["preventive_best_practices"])
-                
-                # Extract common patterns for the use case
-                if foundational_knowledge.get("common_patterns"):
-                    knowledge["patterns"].extend(foundational_knowledge["common_patterns"])
-                
-                logger.info(f"Retrieved enhanced foundational knowledge: "
-                           f"{len(knowledge['foundational_knowledge'])} foundational docs, "
-                           f"{len(knowledge['preventive_guidance'])} preventive guidance docs")
+            # if foundational_knowledge and not foundational_knowledge.get("error"):
+            #     # Extract foundational concepts for better XML structure understanding
+            #     if foundational_knowledge.get("foundational_concepts"):
+            #         knowledge["foundational_knowledge"].extend(foundational_knowledge["foundational_concepts"])
+            #     
+            #     # Extract Metadata API guidelines for proper Flow XML generation
+            #     if foundational_knowledge.get("metadata_api_guidelines"):
+            #         knowledge["foundational_knowledge"].extend(foundational_knowledge["metadata_api_guidelines"])
+            #     
+            #     # Extract preventive best practices to avoid common errors
+            #     if foundational_knowledge.get("preventive_best_practices"):
+            #         knowledge["preventive_guidance"].extend(foundational_knowledge["preventive_best_practices"])
+            #     
+            #     # Extract common patterns for the use case
+            #     if foundational_knowledge.get("common_patterns"):
+            #         knowledge["patterns"].extend(foundational_knowledge["common_patterns"])
+            #     
+            #     logger.info(f"Retrieved enhanced foundational knowledge: "
+            #                f"{len(knowledge['foundational_knowledge'])} foundational docs, "
+            #                f"{len(knowledge['preventive_guidance'])} preventive guidance docs")
             
-            # Search for best practices
-            for query in analysis["search_queries"]:
-                docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "best_practices",
-                    "max_results": 3
-                })
-                knowledge["best_practices"].extend(docs)
+            # # Search for best practices
+            # for query in analysis["search_queries"]:
+            #     docs = search_flow_knowledge_base.invoke({
+            #         "query": query,
+            #         "category": "best_practices",
+            #         "max_results": 3
+            #     })
+            #     knowledge["best_practices"].extend(docs)
             
-            # Search for examples and patterns
-            for query in analysis["search_queries"]:
-                docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "examples",
-                    "max_results": 2
-                })
-                knowledge["patterns"].extend(docs)
+            # # Search for examples and patterns
+            # for query in analysis["search_queries"]:
+            #     docs = search_flow_knowledge_base.invoke({
+            #         "query": query,
+            #         "category": "examples",
+            #         "max_results": 2
+            #     })
+            #     knowledge["patterns"].extend(docs)
             
-            # Find similar sample flows
-            sample_flows = find_similar_sample_flows.invoke({
-                "requirements": analysis["search_queries"][0],  # Primary query
-                "use_case": analysis["primary_use_case"],
-                "complexity": analysis["complexity_level"]
-            })
-            knowledge["sample_flows"] = sample_flows
+            # # Find similar sample flows
+            # sample_flows = find_similar_sample_flows.invoke({
+            #     "requirements": analysis["search_queries"][0],  # Primary query
+            #     "use_case": analysis["primary_use_case"],
+            #     "complexity": analysis["complexity_level"]
+            # })
+            # knowledge["sample_flows"] = sample_flows
             
-            # Search for troubleshooting info
-            troubleshooting_docs = search_flow_knowledge_base.invoke({
-                "query": f"{analysis['primary_use_case']} troubleshooting",
-                "category": "troubleshooting",
-                "max_results": 2
-            })
-            knowledge["troubleshooting"] = troubleshooting_docs
+            # # Search for troubleshooting info
+            # troubleshooting_docs = search_flow_knowledge_base.invoke({
+            #     "query": f"{analysis['primary_use_case']} troubleshooting",
+            #     "category": "troubleshooting",
+            #     "max_results": 2
+            # })
+            # knowledge["troubleshooting"] = troubleshooting_docs
             
-            # Store all documentation results for prompt building
-            all_docs = (knowledge["best_practices"] + knowledge["patterns"] + 
-                       knowledge["troubleshooting"] + knowledge["foundational_knowledge"] + 
-                       knowledge["preventive_guidance"])
-            knowledge["documentation_results"] = all_docs
+            # # Store all documentation results for prompt building
+            # all_docs = (knowledge["best_practices"] + knowledge["patterns"] + 
+            #            knowledge["troubleshooting"] + knowledge["foundational_knowledge"] + 
+            #            knowledge["preventive_guidance"])
+            # knowledge["documentation_results"] = all_docs
             
-            logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
-                       f"{len(knowledge['sample_flows'])} sample flows, "
-                       f"{len(knowledge['patterns'])} patterns, "
-                       f"{len(knowledge['troubleshooting'])} troubleshooting guides, "
-                       f"{len(knowledge['foundational_knowledge'])} foundational docs, "
-                       f"{len(knowledge['preventive_guidance'])} preventive guides")
+            logger.info(f"RAG functionality disabled - returning empty knowledge structure")
+            # logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
+            #            f"{len(knowledge['sample_flows'])} sample flows, "
+            #            f"{len(knowledge['patterns'])} patterns, "
+            #            f"{len(knowledge['troubleshooting'])} troubleshooting guides, "
+            #            f"{len(knowledge['foundational_knowledge'])} foundational docs, "
+            #            f"{len(knowledge['preventive_guidance'])} preventive guides")
             
         except Exception as e:
-            logger.error(f"Error retrieving knowledge: {str(e)}")
+            logger.error(f"Error in knowledge retrieval (RAG disabled): {str(e)}")
             # Return empty knowledge on error to allow flow generation to continue
             knowledge = {
                 "best_practices": [],
@@ -723,49 +728,53 @@ class EnhancedFlowBuilderAgent:
     def retrieve_error_specific_knowledge(self, deployment_errors: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Enhanced error-specific RAG knowledge retrieval for deployment failures"""
         
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
+        logger.info("RAG functionality disabled - returning empty error-specific knowledge")
+        return {}
+        
         # Generate enhanced queries from deployment errors
-        error_queries = self.generate_error_specific_rag_queries(deployment_errors)
+        # error_queries = self.generate_error_specific_rag_queries(deployment_errors)
         
-        if not error_queries:
-            logger.warning("No error-specific queries generated from deployment errors")
-            return {}
+        # if not error_queries:
+        #     logger.warning("No error-specific queries generated from deployment errors")
+        #     return {}
         
-        # Search for error-specific documentation with enhanced queries
-        all_error_docs = []
+        # # Search for error-specific documentation with enhanced queries
+        # all_error_docs = []
         
-        for query in error_queries[:3]:  # Limit to top 3 most specific queries
-            logger.info(f"🔍 Error-specific RAG query: '{query}'")
-            try:
-                error_docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "max_results": 2
-                })
-                if error_docs:
-                    logger.info(f"📚 Found {len(error_docs)} error-specific documents for query")
-                    all_error_docs.extend(error_docs)
-                else:
-                    logger.info("📭 No documents found for this error query")
-            except Exception as e:
-                logger.error(f"❌ Error searching knowledge base for error query '{query}': {e}")
+        # for query in error_queries[:3]:  # Limit to top 3 most specific queries
+        #     logger.info(f"🔍 Error-specific RAG query: '{query}'")
+        #     try:
+        #         error_docs = search_flow_knowledge_base.invoke({
+        #             "query": query,
+        #             "max_results": 2
+        #         })
+        #         if error_docs:
+        #             logger.info(f"📚 Found {len(error_docs)} error-specific documents for query")
+        #             all_error_docs.extend(error_docs)
+        #         else:
+        #             logger.info("📭 No documents found for this error query")
+        #     except Exception as e:
+        #         logger.error(f"❌ Error searching knowledge base for error query '{query}': {e}")
         
-        # Remove duplicates and limit results
-        unique_docs = []
-        seen_content = set()
-        for doc in all_error_docs:
-            content_key = doc.page_content[:100] if hasattr(doc, 'page_content') else str(doc)[:100]
-            if content_key not in seen_content:
-                unique_docs.append(doc)
-                seen_content.add(content_key)
-                if len(unique_docs) >= 4:  # Max 4 error-specific docs
-                    break
+        # # Remove duplicates and limit results
+        # unique_docs = []
+        # seen_content = set()
+        # for doc in all_error_docs:
+        #     content_key = doc.page_content[:100] if hasattr(doc, 'page_content') else str(doc)[:100]
+        #     if content_key not in seen_content:
+        #         unique_docs.append(doc)
+        #         seen_content.add(content_key)
         
-        logger.info(f"🎯 Final error-specific RAG results: {len(unique_docs)} unique documents")
+        # # Limit to most relevant results
+        # final_docs = unique_docs[:5]
         
-        return {
-            'documentation_results': unique_docs,
-            'error_queries_used': error_queries[:3],
-            'total_errors_analyzed': len(deployment_errors)
-        }
+        # logger.info(f"🎯 Final error-specific RAG results: {len(final_docs)} unique documents")
+        
+        # return {
+        #     "documentation_results": final_docs,
+        #     "error_queries_used": error_queries[:3]
+        # }
 
     def _load_flow_documentation(self) -> str:
         """Load the complete Flow.md documentation file as foundational context"""
@@ -907,84 +916,90 @@ class EnhancedFlowBuilderAgent:
         ])
 
         # --- Foundational Flow Knowledge (for initial attempts) ---
-        if knowledge.get('foundational_knowledge'):
-            prompt_parts.append("## 🏗️ FOUNDATIONAL FLOW METADATA API KNOWLEDGE:")
-            prompt_parts.append("Use this core knowledge to build proper Flow XML structure and avoid common validation errors.")
-            
-            foundational_docs = knowledge['foundational_knowledge'][:4]  # Top 4 foundational docs
-            for i, doc in enumerate(foundational_docs, 1):
-                if isinstance(doc, dict):
-                    content_preview = doc.get('content', '')[:350].strip()
-                    metadata = doc.get('metadata', {})
-                    category = metadata.get('category', 'foundational').replace('_', ' ').title()
-                    prompt_parts.append(f"📚 Foundation {i} ({category}):\n---\n{content_preview}\n---\n")
-                elif hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
-                    content_preview = doc.page_content[:350].strip()
-                    category = doc.metadata.get('category', 'foundational').replace('_', ' ').title()
-                    prompt_parts.append(f"📚 Foundation {i} ({category}):\n---\n{content_preview}\n---\n")
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
+        # if knowledge.get('foundational_knowledge'):
+        #     prompt_parts.append("## 🏗️ FOUNDATIONAL FLOW METADATA API KNOWLEDGE:")
+        #     prompt_parts.append("Use this core knowledge to build proper Flow XML structure and avoid common validation errors.")
+        #     
+        #     foundational_docs = knowledge['foundational_knowledge'][:4]  # Top 4 foundational docs
+        #     for i, doc in enumerate(foundational_docs, 1):
+        #         if isinstance(doc, dict):
+        #             content_preview = doc.get('content', '')[:350].strip()
+        #             metadata = doc.get('metadata', {})
+        #             category = metadata.get('category', 'foundational').replace('_', ' ').title()
+        #             prompt_parts.append(f"📚 Foundation {i} ({category}):\n---\n{content_preview}\n---\n")
+        #         elif hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+        #             content_preview = doc.page_content[:350].strip()
+        #             category = doc.metadata.get('category', 'foundational').replace('_', ' ').title()
+        #             prompt_parts.append(f"📚 Foundation {i} ({category}):\n---\n{content_preview}\n---\n")
 
         # --- Preventive Guidance (for initial attempts) ---
-        if knowledge.get('preventive_guidance'):
-            prompt_parts.append("## 🛡️ ERROR PREVENTION GUIDANCE:")
-            prompt_parts.append("Apply this guidance proactively to prevent common Flow deployment failures.")
-            
-            preventive_docs = knowledge['preventive_guidance'][:3]  # Top 3 preventive docs
-            for i, doc in enumerate(preventive_docs, 1):
-                if isinstance(doc, dict):
-                    content_preview = doc.get('content', '')[:300].strip()
-                    prompt_parts.append(f"🚫 Prevention {i}:\n---\n{content_preview}\n---\n")
-                elif hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
-                    content_preview = doc.page_content[:300].strip()
-                    prompt_parts.append(f"🚫 Prevention {i}:\n---\n{content_preview}\n---\n")
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW  
+        # if knowledge.get('preventive_guidance'):
+        #     prompt_parts.append("## 🛡️ ERROR PREVENTION GUIDANCE:")
+        #     prompt_parts.append("Apply this guidance proactively to prevent common Flow deployment failures.")
+        #     
+        #     preventive_docs = knowledge['preventive_guidance'][:3]  # Top 3 preventive docs
+        #     for i, doc in enumerate(preventive_docs, 1):
+        #         if isinstance(doc, dict):
+        #             content_preview = doc.get('content', '')[:300].strip()
+        #             prompt_parts.append(f"🚫 Prevention {i}:\n---\n{content_preview}\n---\n")
+        #         elif hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+        #             content_preview = doc.page_content[:300].strip()
+        #             prompt_parts.append(f"🚫 Prevention {i}:\n---\n{content_preview}\n---\n")
 
         # --- Error-Specific RAG Knowledge (for retry attempts) ---
-        if error_specific_knowledge and error_specific_knowledge.get('documentation_results'):
-            prompt_parts.append("## 🚨 ERROR-SPECIFIC SOLUTIONS (from knowledge base):")
-            
-            error_docs = error_specific_knowledge['documentation_results'][:3]  # Top 3 error solutions
-            for i, doc in enumerate(error_docs, 1):
-                if hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
-                    source = doc.metadata.get('source', 'Knowledge Base')
-                    category = doc.metadata.get('category', 'error_solution')
-                    content_preview = doc.page_content[:300].strip()
-                    prompt_parts.append(f"🔧 Error Solution {i} ({category} from {source}):\n---\n{content_preview}\n---\n")
-                elif isinstance(doc, dict):
-                    content_preview = doc.get('content', '')[:300].strip()
-                    metadata = doc.get('metadata', {})
-                    category = metadata.get('category', 'error_solution')
-                    prompt_parts.append(f"🔧 Error Solution {i} ({category}):\n---\n{content_preview}\n---\n")
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
+        # if error_specific_knowledge and error_specific_knowledge.get('documentation_results'):
+        #     prompt_parts.append("## 🚨 ERROR-SPECIFIC SOLUTIONS (from knowledge base):")
+        #     
+        #     error_docs = error_specific_knowledge['documentation_results'][:3]  # Top 3 error solutions
+        #     for i, doc in enumerate(error_docs, 1):
+        #         if hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+        #             source = doc.metadata.get('source', 'Knowledge Base')
+        #             category = doc.metadata.get('category', 'error_solution')
+        #             content_preview = doc.page_content[:300].strip()
+        #             prompt_parts.append(f"🔧 Error Solution {i} ({category} from {source}):\n---\n{content_preview}\n---\n")
+        #         elif isinstance(doc, dict):
+        #             content_preview = doc.get('content', '')[:300].strip()
+        #             metadata = doc.get('metadata', {})
+        #             category = metadata.get('category', 'error_solution')
+        #             prompt_parts.append(f"🔧 Error Solution {i} ({category}):\n---\n{content_preview}\n---\n")
 
         # --- RAG: Documentation Context ---
-        if knowledge.get('documentation_results'):
-            prompt_parts.append("## Relevant Documentation (Use this for correct syntax and best practices):")
-            for i, doc in enumerate(knowledge['documentation_results'][:3], 1): # Top 3 docs
-                if hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
-                    source = doc.metadata.get('source', 'Unknown')
-                    content_preview = doc.page_content[:400].strip()
-                    prompt_parts.append(f"📄 Doc {i} (from {source}):\n---\n{content_preview}\n---\n")
-                elif isinstance(doc, dict):
-                    content_preview = doc.get('content', '')[:400].strip()
-                    prompt_parts.append(f"📄 Doc {i}:\n---\n{content_preview}\n---\n")
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
+        # if knowledge.get('documentation_results'):
+        #     prompt_parts.append("## Relevant Documentation (Use this for correct syntax and best practices):")
+        #     for i, doc in enumerate(knowledge['documentation_results'][:3], 1): # Top 3 docs
+        #         if hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+        #             source = doc.metadata.get('source', 'Unknown')
+        #             content_preview = doc.page_content[:400].strip()
+        #             prompt_parts.append(f"📄 Doc {i} (from {source}):\n---\n{content_preview}\n---\n")
+        #         elif isinstance(doc, dict):
+        #             content_preview = doc.get('content', '')[:400].strip()
+        #             prompt_parts.append(f"📄 Doc {i}:\n---\n{content_preview}\n---\n")
 
         # --- RAG: Best Practices ---
-        if knowledge.get('best_practices'):
-            prompt_parts.append("## Best Practices (from knowledge base):")
-            for i, practice in enumerate(knowledge['best_practices'][:2], 1):  # Top 2 practices
-                if hasattr(practice, 'page_content'):
-                    content = practice.page_content.strip()
-                elif isinstance(practice, dict):
-                    content = practice.get('content', '').strip()
-                else:
-                    content = str(practice).strip()
-                prompt_parts.append(f"✅ Practice {i}: {content}\n")
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
+        # if knowledge.get('best_practices'):
+        #     prompt_parts.append("## Best Practices (from knowledge base):")
+        #     for i, practice in enumerate(knowledge['best_practices'][:2], 1):  # Top 2 practices
+        #         if hasattr(practice, 'page_content'):
+        #             content = practice.page_content.strip()
+        #         elif isinstance(practice, dict):
+        #             content = practice.get('content', '').strip()
+        #         else:
+        #             content = str(practice).strip()
+        #         prompt_parts.append(f"✅ Practice {i}: {content}\n")
 
         # --- RAG: Sample Flows (if any) ---
-        if knowledge.get('sample_flows'):
-            prompt_parts.append(f"## Similar Sample Flows ({len(knowledge['sample_flows'])} found):")
-            for i, sample in enumerate(knowledge['sample_flows'][:2], 1):  # Top 2 samples
-                flow_name = sample.get('flow_name', f'Sample {i}')
-                description = sample.get('description', 'No description available')
-                prompt_parts.append(f"🔄 Sample {i}: {flow_name}\n   Description: {description}\n")
+        # RAG FUNCTIONALITY COMMENTED OUT FOR NOW
+        # if knowledge.get('sample_flows'):
+        #     prompt_parts.append(f"## Similar Sample Flows ({len(knowledge['sample_flows'])} found):")
+        #     for i, sample in enumerate(knowledge['sample_flows'][:2], 1):  # Top 2 samples
+        #         flow_name = sample.get('flow_name', f'Sample {i}')
+        #         description = sample.get('description', 'No description available')
+        #         prompt_parts.append(f"🔄 Sample {i}: {flow_name}\n   Description: {description}\n")
 
         # --- Retry Context (if this is a retry attempt) ---
         if request.retry_context:
@@ -1705,9 +1720,9 @@ RAG-ENHANCED ERROR RESOLUTION:
 
 def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguageModel) -> AgentWorkforceState:
     """
-    Run the Enhanced Flow Builder Agent with unified RAG approach and conversational memory
+    Run the Enhanced Flow Builder Agent with unified approach and conversational memory (RAG currently disabled)
     """
-    print("----- ENHANCED FLOW BUILDER AGENT (with Unified RAG + Memory) -----")
+    print("----- ENHANCED FLOW BUILDER AGENT (with Memory, RAG disabled) -----")
     
     flow_build_request_dict = state.get("current_flow_build_request")
     build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
@@ -1728,7 +1743,7 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
                 print(f"🔄 RETRY MODE: Processing attempt #{retry_attempt}")
                 print(f"🧠 MEMORY: Will include context from previous attempts")
                 print(f"🔧 Will rebuild flow addressing previous deployment failure")
-                print(f"🎯 Using unified RAG approach with integrated failure context and memory")
+                print(f"🎯 Using unified approach with integrated failure context and memory (RAG disabled)")
                 
                 # Show specific fixes that will be applied
                 specific_fixes = flow_build_request.retry_context.get('specific_fixes_needed', [])
@@ -1746,7 +1761,7 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
                     print(f"📋 ADDRESSING DEPLOYMENT ERROR: {truncated_error}")
                 
             else:
-                print("📝 INITIAL ATTEMPT: Using unified RAG approach")
+                print("📝 INITIAL ATTEMPT: Using unified approach (RAG disabled)")
                 print("🧠 MEMORY: Starting fresh memory tracking for this flow")
             
             # Load persisted memory data from state
@@ -1763,8 +1778,8 @@ def run_enhanced_flow_builder_agent(state: AgentWorkforceState, llm: BaseLanguag
             else:
                 print("🧠 MEMORY: No previous attempts found for this flow")
             
-            # Use the unified RAG approach for all scenarios
-            # The method automatically handles user story, RAG knowledge, memory context, and optional retry context
+            # Use the unified approach for all scenarios (RAG currently disabled)
+            # The method automatically handles user story, memory context, and optional retry context
             flow_response = agent.generate_flow_with_rag(flow_build_request)
             
             # Enhanced debugging for the generated Flow XML

@@ -91,6 +91,10 @@ LANGGRAPH_RECURSION_LIMIT=50
 # SALESFORCE SETTINGS
 # =======================
 
+# Default Salesforce Org Alias (used when no auth_request is provided in workflow state) 
+# This enables LangGraph Studio usage without requiring programmatic state initialization
+ORG_ALIAS=your_default_org_alias_here
+
 # Salesforce JWT Bearer Flow Settings
 SALESFORCE_CLIENT_ID=your_connected_app_client_id
 SALESFORCE_PRIVATE_KEY_PATH=path/to/your/private_key.pem

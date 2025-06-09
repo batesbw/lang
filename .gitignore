@@ -247,3 +247,4 @@ certs/
 .langgraph_api/.langgraph_checkpoint.2.pckl
 .langgraph_api/.langgraph_checkpoint.3.pckl
 .langgraph_api/.langgraph_ops.pckl
+.langgraph_api/.langgraph_retry_counter.pckl
