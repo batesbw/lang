@@ -589,10 +589,175 @@ def sync_github_sample_flows(repo_name: str, owner: str = None) -> Dict[str, Any
             "flows_synced": 0
         }
 
+@tool
+def populate_basic_flow_knowledge(populate_troubleshooting: bool = True, populate_best_practices: bool = True) -> Dict[str, Any]:
+    """
+    Populate the knowledge base with basic Flow troubleshooting and best practices content.
+    This provides immediate value for error-specific RAG queries.
+    
+    Args:
+        populate_troubleshooting: Whether to add troubleshooting content
+        populate_best_practices: Whether to add best practices content
+    
+    Returns:
+        Dictionary with population results
+    """
+    try:
+        results = {
+            "troubleshooting_added": 0,
+            "best_practices_added": 0,
+            "errors": []
+        }
+        
+        if populate_troubleshooting:
+            troubleshooting_docs = [
+                {
+                    "content": """Duplicate Elements Error Fix:
+When Flow deployment fails with 'duplicate element' errors, check for elements with the same name within the same type (e.g., two recordLookups elements named 'Get_Records').
+Fix: Remove duplicate elements and consolidate logic into a single element. Each element type must have unique names within the Flow.
+Common patterns: recordLookups, recordCreates, recordUpdates, assignments, decisions.""",
+                    "metadata": {
+                        "category": "troubleshooting",
+                        "error_type": "duplicate_elements",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """Collection Variable Usage Rules:
+Collection variables CANNOT be used directly in inputAssignments for Record operations.
+Correct pattern: Use Assignment elements to add items to collections, then reference the collection variable directly as input for Create/Update Records.
+Error pattern: Trying to use collection variables in individual field assignments will cause deployment failures.""",
+                    "metadata": {
+                        "category": "troubleshooting",
+                        "error_type": "collection_variable",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """Element Reference Validation:
+All element references must point to actual elements that exist in the flow. Element names are case-sensitive.
+Fix: Ensure referenced elements exist and names match exactly. Use proper syntax: elementName.fieldName
+Common issue: Referencing elements that were renamed or removed during flow modifications.""",
+                    "metadata": {
+                        "category": "troubleshooting",
+                        "error_type": "element_reference",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "medium"
+                    }
+                },
+                {
+                    "content": """API Name Validation Rules:
+Flow API names must be alphanumeric and start with a letter. No spaces, hyphens, or special characters.
+Fix: Replace invalid characters with underscores. Example: 'My-Flow Name' becomes 'My_Flow_Name'
+Apply this rule to all element names, variable names, and the Flow API name itself.""",
+                    "metadata": {
+                        "category": "troubleshooting",
+                        "error_type": "api_name_validation",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "medium"
+                    }
+                },
+                {
+                    "content": """XML Structure Requirements:
+Flow XML must include proper namespace: xmlns="http://soap.sforce.com/2006/04/metadata"
+Required elements: apiVersion, label, processType, status
+Status must be 'Active' for deployment, not 'Draft'
+Include processMetadataValues for Flow Builder compatibility.""",
+                    "metadata": {
+                        "category": "troubleshooting",
+                        "error_type": "xml_structure",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "high"
+                    }
+                }
+            ]
+            
+            for doc_data in troubleshooting_docs:
+                success = rag_manager.add_documentation(
+                    content=doc_data["content"],
+                    metadata=doc_data["metadata"]
+                )
+                if success:
+                    results["troubleshooting_added"] += 1
+                else:
+                    results["errors"].append(f"Failed to add troubleshooting doc: {doc_data['metadata']['error_type']}")
+        
+        if populate_best_practices:
+            best_practices_docs = [
+                {
+                    "content": """Flow XML Best Practices:
+1. Always set status to 'Active' for immediate deployment
+2. Use descriptive, alphanumeric API names without spaces/hyphens
+3. Include all required processMetadataValues for Flow Builder support
+4. Validate all element references point to existing elements
+5. Consolidate duplicate logic instead of creating duplicate elements""",
+                    "metadata": {
+                        "category": "best_practices",
+                        "topic": "xml_generation",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """Collection Variable Best Practices:
+1. Use Assignment elements to populate collections
+2. Reference collections directly in recordCreates/recordUpdates
+3. Never use collections in individual inputAssignments
+4. Use Get Records with outputReference for collection variables
+5. Access collection size using proper syntax""",
+                    "metadata": {
+                        "category": "best_practices",
+                        "topic": "collection_variables",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """Error Prevention Strategies:
+1. Validate API names before creating elements
+2. Check for duplicate element names within types
+3. Verify all element references exist
+4. Include proper XML namespace and declarations
+5. Test Flow XML structure before deployment""",
+                    "metadata": {
+                        "category": "best_practices",
+                        "topic": "error_prevention",
+                        "source": "Flow_Builder_Agent",
+                        "priority": "medium"
+                    }
+                }
+            ]
+            
+            for doc_data in best_practices_docs:
+                success = rag_manager.add_documentation(
+                    content=doc_data["content"],
+                    metadata=doc_data["metadata"]
+                )
+                if success:
+                    results["best_practices_added"] += 1
+                else:
+                    results["errors"].append(f"Failed to add best practices doc: {doc_data['metadata']['topic']}")
+        
+        logger.info(f"Populated knowledge base: {results['troubleshooting_added']} troubleshooting docs, "
+                   f"{results['best_practices_added']} best practices docs")
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error populating basic flow knowledge: {str(e)}")
+        return {
+            "troubleshooting_added": 0,
+            "best_practices_added": 0,
+            "errors": [str(e)]
+        }
+
 # Export tools for use in agents
 RAG_TOOLS = [
     search_flow_knowledge_base,
     find_similar_sample_flows,
     add_flow_documentation,
-    sync_github_sample_flows
+    sync_github_sample_flows,
+    populate_basic_flow_knowledge
 ] 

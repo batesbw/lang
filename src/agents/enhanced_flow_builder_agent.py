@@ -556,66 +556,190 @@ class EnhancedFlowBuilderAgent:
             "best_practices": [],
             "sample_flows": [],
             "patterns": [],
-            "troubleshooting": []
+            "troubleshooting": [],
+            "documentation_results": []
         }
         
-        # TODO: RAG searches temporarily commented out - will return to them later
-        logger.info("RAG searches temporarily disabled - returning empty knowledge")
-        
-        # try:
-        #     # Search for best practices
-        #     for query in analysis["search_queries"]:
-        #         docs = search_flow_knowledge_base.invoke({
-        #             "query": query,
-        #             "category": "best_practices",
-        #             "max_results": 3
-        #         })
-        #         knowledge["best_practices"].extend(docs)
-        #     
-        #     # Search for examples and patterns
-        #     for query in analysis["search_queries"]:
-        #         docs = search_flow_knowledge_base.invoke({
-        #             "query": query,
-        #             "category": "examples",
-        #             "max_results": 2
-        #         })
-        #         knowledge["patterns"].extend(docs)
-        #     
-        #     # Find similar sample flows
-        #     sample_flows = find_similar_sample_flows.invoke({
-        #         "requirements": analysis["search_queries"][0],  # Primary query
-        #         "use_case": analysis["primary_use_case"],
-        #         "complexity": analysis["complexity_level"]
-        #     })
-        #     knowledge["sample_flows"] = sample_flows
-        #     
-        #     # Search for troubleshooting info
-        #     troubleshooting_docs = search_flow_knowledge_base.invoke({
-        #         "query": f"{analysis['primary_use_case']} troubleshooting",
-        #         "category": "troubleshooting",
-        #         "max_results": 2
-        #     })
-        #     knowledge["troubleshooting"] = troubleshooting_docs
-        #     
-        #     logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
-        #                f"{len(knowledge['sample_flows'])} sample flows, "
-        #                f"{len(knowledge['patterns'])} patterns, "
-        #                f"{len(knowledge['troubleshooting'])} troubleshooting guides")
-        #     
-        # except Exception as e:
-        #     logger.error(f"Error retrieving knowledge: {str(e)}")
-        #     # Return empty knowledge on error to allow flow generation to continue
-        #     knowledge = {
-        #         "best_practices": [],
-        #         "sample_flows": [],
-        #         "patterns": [],
-        #         "troubleshooting": []
-        #     }
+        try:
+            # Search for best practices
+            for query in analysis["search_queries"]:
+                docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "best_practices",
+                    "max_results": 3
+                })
+                knowledge["best_practices"].extend(docs)
+            
+            # Search for examples and patterns
+            for query in analysis["search_queries"]:
+                docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "examples",
+                    "max_results": 2
+                })
+                knowledge["patterns"].extend(docs)
+            
+            # Find similar sample flows
+            sample_flows = find_similar_sample_flows.invoke({
+                "requirements": analysis["search_queries"][0],  # Primary query
+                "use_case": analysis["primary_use_case"],
+                "complexity": analysis["complexity_level"]
+            })
+            knowledge["sample_flows"] = sample_flows
+            
+            # Search for troubleshooting info
+            troubleshooting_docs = search_flow_knowledge_base.invoke({
+                "query": f"{analysis['primary_use_case']} troubleshooting",
+                "category": "troubleshooting",
+                "max_results": 2
+            })
+            knowledge["troubleshooting"] = troubleshooting_docs
+            
+            # Store all documentation results for prompt building
+            all_docs = knowledge["best_practices"] + knowledge["patterns"] + knowledge["troubleshooting"]
+            knowledge["documentation_results"] = all_docs
+            
+            logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
+                       f"{len(knowledge['sample_flows'])} sample flows, "
+                       f"{len(knowledge['patterns'])} patterns, "
+                       f"{len(knowledge['troubleshooting'])} troubleshooting guides")
+            
+        except Exception as e:
+            logger.error(f"Error retrieving knowledge: {str(e)}")
+            # Return empty knowledge on error to allow flow generation to continue
+            knowledge = {
+                "best_practices": [],
+                "sample_flows": [],
+                "patterns": [],
+                "troubleshooting": [],
+                "documentation_results": []
+            }
         
         return knowledge
-    
-    def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any]) -> str:
-        """Builds a comprehensive prompt for the LLM, incorporating RAG and memory."""
+
+    def generate_error_specific_rag_queries(self, deployment_errors: List[Dict[str, Any]]) -> List[str]:
+        """Generate targeted RAG queries based on specific deployment errors"""
+        queries = []
+        
+        if not deployment_errors:
+            return queries
+            
+        for error in deployment_errors:
+            error_msg = error.get('problem', '').lower()
+            component_type = error.get('componentType', '').lower()
+            
+            # Duplicate element errors
+            if 'duplicate' in error_msg or 'duplicated' in error_msg:
+                queries.append("Salesforce Flow XML duplicate elements prevention")
+                queries.append("Flow XML validation duplicate element fixes")
+            
+            # Collection variable errors
+            elif 'collection' in error_msg and 'variable' in error_msg:
+                queries.append("Flow collection variable usage best practices")
+                queries.append("Salesforce Flow collection variable inputAssignments rules")
+            
+            # Element reference errors
+            elif 'reference' in error_msg or 'not found' in error_msg:
+                queries.append("Flow element reference validation requirements")
+                queries.append("Salesforce Flow element naming conventions")
+            
+            # API name validation errors
+            elif 'api name' in error_msg or 'invalid name' in error_msg:
+                queries.append("Salesforce Flow API name validation rules")
+                queries.append("Flow element naming best practices")
+            
+            # XML structure/syntax errors
+            elif 'xml' in error_msg or 'metadata' in error_msg or 'malformed' in error_msg:
+                queries.append("Salesforce Flow XML structure requirements")
+                queries.append("Flow metadata XML validation rules")
+            
+            # Flow-specific component errors
+            elif component_type == 'flow':
+                if 'status' in error_msg:
+                    queries.append("Salesforce Flow status and activation requirements")
+                elif 'process' in error_msg:
+                    queries.append("Flow processType and processMetadataValues configuration")
+                else:
+                    queries.append(f"Salesforce Flow {error_msg[:50]} troubleshooting")
+            
+            # General error fallback
+            else:
+                # Extract key error terms for search
+                error_terms = [term for term in error_msg.split() if len(term) > 3][:3]
+                if error_terms:
+                    query = f"Salesforce Flow {' '.join(error_terms)} error fix"
+                    queries.append(query)
+        
+        # Remove duplicates while preserving order
+        unique_queries = []
+        for query in queries:
+            if query not in unique_queries:
+                unique_queries.append(query)
+        
+        logger.info(f"Generated {len(unique_queries)} error-specific RAG queries from {len(deployment_errors)} deployment errors")
+        return unique_queries[:5]  # Limit to top 5 most relevant queries
+
+    def retrieve_error_specific_knowledge(self, deployment_errors: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Retrieve RAG knowledge specifically for deployment error resolution"""
+        
+        error_knowledge = {
+            "error_solutions": [],
+            "validation_rules": [],
+            "troubleshooting_patterns": [],
+            "documentation_results": []
+        }
+        
+        try:
+            # Generate error-specific queries
+            error_queries = self.generate_error_specific_rag_queries(deployment_errors)
+            
+            if not error_queries:
+                logger.info("No error-specific queries generated, skipping error-specific RAG retrieval")
+                return error_knowledge
+            
+            # Search for error-specific solutions
+            for query in error_queries:
+                # Search troubleshooting category
+                troubleshooting_docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "troubleshooting", 
+                    "max_results": 2
+                })
+                error_knowledge["error_solutions"].extend(troubleshooting_docs)
+                
+                # Search validation rules
+                validation_docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "validation_rules",
+                    "max_results": 2
+                })
+                error_knowledge["validation_rules"].extend(validation_docs)
+                
+                # Search best practices for prevention
+                best_practice_docs = search_flow_knowledge_base.invoke({
+                    "query": query,
+                    "category": "best_practices",
+                    "max_results": 1
+                })
+                error_knowledge["troubleshooting_patterns"].extend(best_practice_docs)
+            
+            # Store all documentation results
+            all_error_docs = (error_knowledge["error_solutions"] + 
+                            error_knowledge["validation_rules"] + 
+                            error_knowledge["troubleshooting_patterns"])
+            error_knowledge["documentation_results"] = all_error_docs
+            
+            logger.info(f"Retrieved error-specific knowledge: {len(error_knowledge['error_solutions'])} solutions, "
+                       f"{len(error_knowledge['validation_rules'])} validation rules, "
+                       f"{len(error_knowledge['troubleshooting_patterns'])} patterns")
+            
+        except Exception as e:
+            logger.error(f"Error retrieving error-specific knowledge: {str(e)}")
+            
+        return error_knowledge
+
+    def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any], error_specific_knowledge: Dict[str, Any] = None) -> str:
+        """Builds a comprehensive prompt for the LLM, incorporating RAG, memory, and error-specific knowledge."""
         
         memory_context = self._get_memory_context(request.flow_api_name)
         
@@ -639,41 +763,99 @@ class EnhancedFlowBuilderAgent:
             "="*30 + "\n",
         ])
 
+        # --- Error-Specific RAG Knowledge (for retry attempts) ---
+        if error_specific_knowledge and error_specific_knowledge.get('documentation_results'):
+            prompt_parts.append("## 🚨 ERROR-SPECIFIC SOLUTIONS (from knowledge base):")
+            
+            error_docs = error_specific_knowledge['documentation_results'][:3]  # Top 3 error solutions
+            for i, doc in enumerate(error_docs, 1):
+                if hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+                    source = doc.metadata.get('source', 'Knowledge Base')
+                    category = doc.metadata.get('category', 'error_solution')
+                    content_preview = doc.page_content[:300].strip()
+                    prompt_parts.append(f"🔧 Error Solution {i} ({category} from {source}):\n---\n{content_preview}\n---\n")
+                elif isinstance(doc, dict):
+                    content_preview = doc.get('content', '')[:300].strip()
+                    metadata = doc.get('metadata', {})
+                    category = metadata.get('category', 'error_solution')
+                    prompt_parts.append(f"🔧 Error Solution {i} ({category}):\n---\n{content_preview}\n---\n")
+
         # --- RAG: Documentation Context ---
         if knowledge.get('documentation_results'):
             prompt_parts.append("## Relevant Documentation (Use this for correct syntax and best practices):")
             for i, doc in enumerate(knowledge['documentation_results'][:3], 1): # Top 3 docs
-                source = doc.metadata.get('source', 'Unknown')
-                content_preview = doc.page_content[:400].strip()
-                prompt_parts.append(f"📄 Doc {i} (from {source}):\n---\n{content_preview}\n---\n")
-        
-        # --- RAG: Golden Examples ---
-        if knowledge.get('sample_flow_results'):
-            prompt_parts.append("## Similar Flow Examples (Use these as a structural template):")
-            for i, flow in enumerate(knowledge['sample_flow_results'][:2], 1): # Top 2 examples
-                prompt_parts.append(f"🔧 Example {i}: {flow.get('flow_name')}")
-                prompt_parts.append(f"   Description: {flow.get('description')}")
-                # Provide a snippet of the XML as a template
-                xml_snippet = flow.get('flow_xml', '')
-                # Basic snippet extraction
-                start_index = xml_snippet.find('<processMetadataValues>')
-                if start_index == -1:
-                    start_index = xml_snippet.find('<screens>')
-                if start_index != -1:
-                    xml_snippet = xml_snippet[start_index:]
+                if hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+                    source = doc.metadata.get('source', 'Unknown')
+                    content_preview = doc.page_content[:400].strip()
+                    prompt_parts.append(f"📄 Doc {i} (from {source}):\n---\n{content_preview}\n---\n")
+                elif isinstance(doc, dict):
+                    content_preview = doc.get('content', '')[:400].strip()
+                    prompt_parts.append(f"📄 Doc {i}:\n---\n{content_preview}\n---\n")
 
-                prompt_parts.append(f"   XML Snippet:\n```xml\n{xml_snippet[:500].strip()}\n```\n")
+        # --- RAG: Best Practices ---
+        if knowledge.get('best_practices'):
+            prompt_parts.append("## Best Practices (from knowledge base):")
+            for i, practice in enumerate(knowledge['best_practices'][:2], 1):  # Top 2 practices
+                if hasattr(practice, 'page_content'):
+                    content = practice.page_content.strip()
+                elif isinstance(practice, dict):
+                    content = practice.get('content', '').strip()
+                else:
+                    content = str(practice).strip()
+                prompt_parts.append(f"✅ Practice {i}: {content}\n")
+
+        # --- RAG: Sample Flows (if any) ---
+        if knowledge.get('sample_flows'):
+            prompt_parts.append(f"## Similar Sample Flows ({len(knowledge['sample_flows'])} found):")
+            for i, sample in enumerate(knowledge['sample_flows'][:2], 1):  # Top 2 samples
+                flow_name = sample.get('flow_name', f'Sample {i}')
+                description = sample.get('description', 'No description available')
+                prompt_parts.append(f"🔄 Sample {i}: {flow_name}\n   Description: {description}\n")
+
+        # --- Retry Context (if this is a retry attempt) ---
+        if request.retry_context:
+            retry_attempt = request.retry_context.get('retry_attempt', 1)
+            deployment_errors = request.retry_context.get('deployment_errors', [])
+            validation_errors = request.retry_context.get('validation_errors', [])
+            
+            prompt_parts.extend([
+                f"\n## 🔄 RETRY ATTEMPT #{retry_attempt} - CRITICAL FIXES REQUIRED",
+                "The previous Flow XML failed deployment. You MUST fix these specific errors:",
+            ])
+            
+            # Show deployment errors
+            if deployment_errors:
+                prompt_parts.append("### DEPLOYMENT ERRORS TO FIX:")
+                for i, error in enumerate(deployment_errors[:3], 1):  # Top 3 deployment errors
+                    component = error.get('fullName', 'Unknown')
+                    problem = error.get('problem', 'Unknown error')
+                    prompt_parts.append(f"❌ Error {i} ({component}): {problem}")
+            
+            # Show validation errors
+            if validation_errors:
+                prompt_parts.append("### VALIDATION ERRORS TO FIX:")
+                for i, error in enumerate(validation_errors[:3], 1):  # Top 3 validation errors
+                    if isinstance(error, dict):
+                        error_msg = error.get('error_message', str(error))
+                    else:
+                        error_msg = str(error)
+                    prompt_parts.append(f"⚠️  Validation {i}: {error_msg}")
+            
+            prompt_parts.append("\n🎯 MANDATORY: Address ALL the above errors in your XML generation.\n")
 
         # --- Final Instructions ---
         prompt_parts.extend([
-            "\n## Your Task:",
-            "1.  **Analyze** all the provided context: the user story, memory from past attempts, documentation, and examples.",
-            "2.  **Synthesize** this information to create a robust and valid Flow.",
-            "3.  **Prioritize** using patterns from the 'Similar Flow Examples' as a template for the overall structure.",
-            "4.  **Refer** to the 'Relevant Documentation' for precise syntax for elements like variables, decisions, and actions.",
-            "5.  **Pay Attention** to the MEMORY section. Do NOT repeat past mistakes. Build upon successful patterns.",
-            "6.  **Generate** the complete, final XML for the `.flow-meta.xml` file inside a single `<?xml ...>` block.",
-            "7.  **Do not** add any explanations or comments outside of the XML block."
+            "\n## Final Instructions:",
+            "1. Generate complete, production-ready Salesforce Flow XML",
+            "2. Include all required elements and proper structure", 
+            "3. Set status to 'Active' for immediate deployment",
+            "4. Ensure all API names are valid (alphanumeric, no spaces/hyphens)",
+            "5. If this is a retry, fix ALL the specific errors mentioned above",
+            "6. Use the documentation and best practices provided above",
+            "7. Apply error-specific solutions if provided",
+            "8. Return ONLY the XML - no explanations or markdown",
+            "",
+            "START YOUR RESPONSE WITH: <?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         ])
         
         return "\n".join(prompt_parts)
@@ -681,24 +863,31 @@ class EnhancedFlowBuilderAgent:
     def generate_flow_with_rag(self, request: FlowBuildRequest) -> FlowBuildResponse:
         """Generate a flow using unified RAG-enhanced approach for both initial and retry attempts"""
         
-        # Determine attempt number for memory tracking
-        retry_attempt = request.retry_context.get('retry_attempt', 1) if request.retry_context else 1
-        
         try:
             # Step 1: Analyze requirements
-            logger.info(f"Analyzing requirements for flow: {request.flow_api_name}")
             analysis = self.analyze_requirements(request)
+            retry_attempt = request.retry_context.get('retry_attempt', 1) if request.retry_context else 1
             
-            # Step 2: Retrieve relevant knowledge
-            logger.info("Retrieving relevant knowledge from RAG sources")
+            # Step 2: Retrieve knowledge (enhanced for retry attempts)
             knowledge = self.retrieve_knowledge(analysis)
             
-            # Step 3: Generate unified prompt (includes user story, RAG knowledge, memory context, and optional retry context)
-            logger.info("Generating unified enhanced prompt with memory context")
-            enhanced_prompt = self.generate_enhanced_prompt(request, knowledge)
+            # Step 3: If this is a retry attempt, get error-specific RAG knowledge
+            error_specific_knowledge = {}
+            if request.retry_context:
+                # Extract deployment errors from retry context
+                deployment_errors = request.retry_context.get('deployment_errors', [])
+                if deployment_errors:
+                    print(f"🔍 Retrieving error-specific RAG knowledge for {len(deployment_errors)} deployment errors")
+                    error_specific_knowledge = self.retrieve_error_specific_knowledge(deployment_errors)
+                    
+                    # Log what we found
+                    if error_specific_knowledge.get('documentation_results'):
+                        print(f"📚 Found {len(error_specific_knowledge['documentation_results'])} error-specific documentation entries")
+                    else:
+                        print("⚠️  No error-specific documentation found in knowledge base")
             
-            # Step 4: Use LLM to generate flow design with structured XML output
-            logger.info("Generating flow design with LLM")
+            # Step 4: Generate enhanced prompt with both regular and error-specific knowledge
+            enhanced_prompt = self.generate_enhanced_prompt(request, knowledge, error_specific_knowledge)
             
             # Enhanced system prompt for XML generation
             xml_system_prompt = """You are an expert Salesforce Flow developer. Your task is to generate complete, production-ready Salesforce Flow XML based on user requirements and context.
@@ -776,12 +965,11 @@ FAILURE LEARNING:
 - Verify all element references are correct and point to existing elements
 - SPECIAL ATTENTION: If the error mentions "duplicate" or "duplicated", carefully scan the XML for duplicate elements and remove them
 
-FAILURE LEARNING:
-- If this is a retry attempt, you will see specific error analysis and fixes needed
-- Apply ALL the required fixes mentioned in the retry context
-- Learn from the previous attempt's failures and avoid repeating them
-- Pay special attention to collection variable usage restrictions
-- Verify all element references are correct and point to existing elements"""
+RAG-ENHANCED ERROR RESOLUTION:
+- When error-specific documentation is provided, prioritize those solutions
+- Apply the specific fixes and patterns recommended in the knowledge base
+- Use the validation rules and best practices from the documentation
+- Follow the troubleshooting patterns for similar error scenarios"""
 
             messages = [
                 SystemMessage(content=xml_system_prompt),
@@ -822,6 +1010,12 @@ FAILURE LEARNING:
                 if request.retry_context:
                     enhanced_recommendations.append(f"Addressed deployment errors from retry #{retry_attempt}")
                     enhanced_best_practices.append("Applied failure learning and memory context")
+                    
+                    # Add error-specific RAG insights
+                    if error_specific_knowledge.get('documentation_results'):
+                        error_doc_count = len(error_specific_knowledge['documentation_results'])
+                        enhanced_recommendations.append(f"Applied {error_doc_count} error-specific solutions from knowledge base")
+                        enhanced_best_practices.append("RAG-enhanced error resolution from documentation")
                 
                 enhanced_response = FlowBuildResponse(
                     success=True,
@@ -849,7 +1043,8 @@ FAILURE LEARNING:
                         "best_practices": enhanced_best_practices,
                         "xml_length": len(flow_xml),
                         "use_case": analysis['primary_use_case'],
-                        "complexity": analysis['complexity_level']
+                        "complexity": analysis['complexity_level'],
+                        "error_specific_rag_applied": bool(error_specific_knowledge.get('documentation_results'))
                     },
                     retry_attempt=retry_attempt
                 )

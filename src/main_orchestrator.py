@@ -303,6 +303,8 @@ def prepare_retry_flow_request(state: AgentWorkforceState) -> AgentWorkforceStat
                 "original_flow_xml": last_build_response.flow_xml,
                 "deployment_error": deployment_response.get("error_message", "Unknown error"),
                 "component_errors": deployment_response.get("component_errors", []),
+                "deployment_errors": deployment_response.get("component_errors", []),  # For RAG compatibility
+                "validation_errors": [],  # Will be filled if validation also fails
                 "error_analysis": error_analysis,
                 "reasoning_prompts": error_analysis["reasoning_prompts"],
                 "error_type": error_analysis["error_type"],
