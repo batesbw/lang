@@ -2,7 +2,6 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 
@@ -20,19 +19,17 @@ from src.schemas.test_designer_schemas import (
     TestScenario, ApexTestClass, SalesforceObjectInfo
 )
 from src.state.agent_workforce_state import AgentWorkforceState
+from src.config import get_llm
 
 # Load environment variables
 dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=dotenv_path)
 
-# Ensure ANTHROPIC_API_KEY is set
-if not os.getenv("ANTHROPIC_API_KEY"):
-    raise ValueError("ANTHROPIC_API_KEY not found in environment variables.")
-
-LLM = ChatAnthropic(
-    model=os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"), 
+# Get LLM instance for test designer agent
+LLM = get_llm(
+    agent_name="TEST_DESIGNER",
     temperature=0.1,  # Slightly higher for creativity in test scenarios
-    max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2048"))  # Reduced from 4096 to 2048 for faster responses
+    max_tokens=2048  # Reduced from 4096 to 2048 for faster responses
 )
 
 # Initialize tools with the LLM

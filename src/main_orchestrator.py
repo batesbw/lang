@@ -9,7 +9,6 @@ warnings.filterwarnings("ignore", message=".*Mixing V1 models and V2 models.*")
 warnings.filterwarnings("ignore", message=".*Cannot generate a JsonSchema for core_schema.PlainValidatorFunctionSchema.*")
 
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
 from langgraph.graph import StateGraph, END, START
 from langsmith import Client as LangSmithClient
 from langchain_core.language_models import BaseLanguageModel
@@ -26,17 +25,11 @@ from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 from src.schemas.web_search_schemas import WebSearchRequest, WebSearchAgentRequest, WebSearchAgentResponse, SearchDepth
 from src.schemas.test_designer_schemas import TestDesignerRequest, TestDesignerResponse
+from src.config import get_llm, get_all_agent_configs
 
 # Load environment variables
 dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=dotenv_path)
-
-# Ensure required API keys are set
-if not os.getenv("ANTHROPIC_API_KEY"):
-    raise ValueError("ANTHROPIC_API_KEY not found in environment variables.")
-
-if not os.getenv("LANGSMITH_API_KEY"):
-    print("Warning: LANGSMITH_API_KEY not found. LangSmith tracing may not work.")
 
 # Check if web search is available
 WEB_SEARCH_AVAILABLE = bool(os.getenv("TAVILY_API_KEY"))
@@ -45,16 +38,16 @@ if WEB_SEARCH_AVAILABLE:
 else:
     print("⚠️ Web search disabled (TAVILY_API_KEY not found)")
 
-# Initialize LLM with configurable model
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))  # Configurable max tokens
+# Display AI Provider Configuration
+print("\n=== AI PROVIDER CONFIGURATION ===")
+all_configs = get_all_agent_configs()
+for agent_name, config in all_configs.items():
+    status = "✅" if config["api_key_set"] else "❌"
+    print(f"{status} {agent_name.upper()}: {config['provider']} | {config['model']} | {config['max_tokens']} tokens")
 
-LLM = ChatAnthropic(
-    model=ANTHROPIC_MODEL, 
-    temperature=0, 
-    max_tokens=LLM_MAX_TOKENS  # Use configurable value
-)
-print(f"Initialized LLM with model: {ANTHROPIC_MODEL}, max_tokens: {LLM_MAX_TOKENS}")
+# Initialize LLM with global configuration for orchestrator
+LLM = get_llm(temperature=0)
+print(f"\nOrchestrator LLM: {all_configs['global']['provider']} | {all_configs['global']['model']}")
 
 # Initialize retry configuration
 MAX_BUILD_DEPLOY_RETRIES = int(os.getenv("MAX_BUILD_DEPLOY_RETRIES", "3"))
@@ -64,9 +57,9 @@ RECURSION_LIMIT = int(os.getenv("LANGGRAPH_RECURSION_LIMIT", "50"))
 # Initialize LangSmith client for tracing
 try:
     langsmith_client = LangSmithClient()
-    print("LangSmith client initialized successfully.")
+    print("✅ LangSmith client initialized successfully.")
 except Exception as e:
-    print(f"Warning: Could not initialize LangSmith client: {e}")
+    print(f"⚠️ Warning: Could not initialize LangSmith client: {e}")
     langsmith_client = None
 
 
@@ -91,7 +84,9 @@ def flow_builder_node(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     print("\n=== FLOW BUILDER NODE ===")
     try:
-        return run_enhanced_flow_builder_agent(state, LLM)
+        # Get Flow Builder specific LLM configuration
+        flow_builder_llm = get_llm(agent_name="FLOW_BUILDER", temperature=0.1)
+        return run_enhanced_flow_builder_agent(state, flow_builder_llm)
     except Exception as e:
         print(f"Error in flow_builder_node: {e}")
         updated_state = state.copy()
@@ -105,7 +100,9 @@ def deployment_node(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     print("\n=== DEPLOYMENT NODE ===")
     try:
-        return run_deployment_agent(state, LLM)
+        # Get Deployment Agent specific LLM configuration
+        deployment_llm = get_llm(agent_name="DEPLOYMENT", temperature=0)
+        return run_deployment_agent(state, deployment_llm)
     except Exception as e:
         print(f"Error in deployment_node: {e}")
         updated_state = state.copy()

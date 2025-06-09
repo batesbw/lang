@@ -2,7 +2,6 @@
 import os
 from pathlib import Path # Added for robust path handling
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 
@@ -13,6 +12,7 @@ from typing import List, Dict, Optional
 from src.tools.salesforce_tools import SalesforceAuthenticatorTool
 from src.schemas.auth_schemas import AuthenticationResponse, SalesforceSessionDetails, AuthenticationRequest, SalesforceAuthResponse
 from src.state.agent_workforce_state import AgentWorkforceState # Using the correct state module
+from src.config import get_llm
 
 # Load environment variables from .env file
 # Construct the path to the .env file in the project root
@@ -23,15 +23,13 @@ from src.state.agent_workforce_state import AgentWorkforceState # Using the corr
 dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=dotenv_path)
 
-# Ensure ANTHROPIC_API_KEY is set
-if not os.getenv("ANTHROPIC_API_KEY"):
-    raise ValueError("ANTHROPIC_API_KEY not found in environment variables.")
-
-LLM = ChatAnthropic(
-    model="claude-3-opus-20240229", 
+# Get LLM instance for authentication agent
+LLM = get_llm(
+    agent_name="AUTHENTICATION",
     temperature=0, 
-    max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2048"))  # Use configurable max tokens, smaller default for auth
+    max_tokens=2048  # Smaller default for auth tasks
 )
+
 AUTHENTICATION_TOOLS = [SalesforceAuthenticatorTool()]
 
 AUTHENTICATION_AGENT_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([

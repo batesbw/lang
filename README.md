@@ -465,26 +465,92 @@ See [FLOW_SCANNER_SETUP.md](FLOW_SCANNER_SETUP.md) for detailed Lightning Flow S
 Create a `.env` file in the root directory:
 
 ```env
+# =======================
+# AI PROVIDER CONFIGURATION
+# =======================
+
+# Global AI Provider Configuration (fallback for all agents)
+# Options: "anthropic" or "gemini"
+AI_PROVIDER=anthropic
+
+# Global Model Name (specific model to use for the provider)
+MODEL_NAME=claude-3-5-sonnet-20241022
+
+# Global LLM Configuration
+MAX_TOKENS=4096
+
+# ===================
+# ANTHROPIC SETTINGS
+# ===================
+
 # Required: Anthropic API Key for LLM functionality
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# Optional: Anthropic model to use (default: claude-3-5-sonnet-20241022)
-ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+# =================
+# GEMINI SETTINGS
+# =================
 
-# Optional: Maximum tokens for LLM responses (default: 4096)
-LLM_MAX_TOKENS=4096
+# Optional: Gemini API Key for Google's Gemini models
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# ==================================
+# PER-AGENT AI MODEL CONFIGURATION
+# ==================================
+
+# You can configure different AI models for each agent to optimize performance:
+
+# Authentication Agent - Fast model for auth tasks
+# AUTHENTICATION_AI_PROVIDER=anthropic
+# AUTHENTICATION_MODEL_NAME=claude-3-haiku-20240307
+# AUTHENTICATION_MAX_TOKENS=1024
+
+# Flow Builder Agent - Powerful model for complex XML generation
+# FLOW_BUILDER_AI_PROVIDER=anthropic
+# FLOW_BUILDER_MODEL_NAME=claude-3-opus-20240229
+# FLOW_BUILDER_MAX_TOKENS=8192
+
+# Test Designer Agent - Creative model for test scenario generation
+# TEST_DESIGNER_AI_PROVIDER=gemini
+# TEST_DESIGNER_MODEL_NAME=gemini-pro
+# TEST_DESIGNER_MAX_TOKENS=4096
+
+# Web Search Agent - Efficient model for query processing
+# WEB_SEARCH_AI_PROVIDER=anthropic
+# WEB_SEARCH_MODEL_NAME=claude-3-5-sonnet-20241022
+# WEB_SEARCH_MAX_TOKENS=2048
+
+# Deployment Agent - Reliable model for deployment tasks
+# DEPLOYMENT_AI_PROVIDER=anthropic
+# DEPLOYMENT_MODEL_NAME=claude-3-5-sonnet-20241022
+# DEPLOYMENT_MAX_TOKENS=4096
+
+# =======================
+# OBSERVABILITY SETTINGS
+# =======================
 
 # Optional: LangSmith API Key for tracing and observability
 LANGSMITH_API_KEY=your_langsmith_api_key_here
 
+# =======================
+# WEB SEARCH SETTINGS
+# =======================
+
 # Optional: Tavily API Key for web search functionality
 TAVILY_API_KEY=your_tavily_api_key_here
+
+# =======================
+# WORKFLOW SETTINGS
+# =======================
 
 # Optional: Maximum build/deploy retry attempts (default: 3)
 MAX_BUILD_DEPLOY_RETRIES=3
 
 # Optional: LangGraph recursion limit (default: 50)
 LANGGRAPH_RECURSION_LIMIT=50
+
+# =======================
+# SALESFORCE SETTINGS
+# =======================
 
 # Salesforce JWT Bearer Flow Settings
 SALESFORCE_CLIENT_ID=your_connected_app_client_id

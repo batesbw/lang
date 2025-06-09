@@ -716,68 +716,75 @@ class EnhancedFlowBuilderAgent:
         return unique_queries[:5]  # Limit to top 5 most relevant queries
 
     def retrieve_error_specific_knowledge(self, deployment_errors: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Retrieve RAG knowledge specifically for deployment error resolution"""
+        """Enhanced error-specific RAG knowledge retrieval for deployment failures"""
         
-        error_knowledge = {
-            "error_solutions": [],
-            "validation_rules": [],
-            "troubleshooting_patterns": [],
-            "documentation_results": []
+        # Generate enhanced queries from deployment errors
+        error_queries = self.generate_error_specific_rag_queries(deployment_errors)
+        
+        if not error_queries:
+            logger.warning("No error-specific queries generated from deployment errors")
+            return {}
+        
+        # Search for error-specific documentation with enhanced queries
+        all_error_docs = []
+        
+        for query in error_queries[:3]:  # Limit to top 3 most specific queries
+            logger.info(f"🔍 Error-specific RAG query: '{query}'")
+            try:
+                error_docs = search_flow_knowledge_base(query, k=2)  # Get 2 docs per query
+                if error_docs:
+                    logger.info(f"📚 Found {len(error_docs)} error-specific documents for query")
+                    all_error_docs.extend(error_docs)
+                else:
+                    logger.info("📭 No documents found for this error query")
+            except Exception as e:
+                logger.error(f"❌ Error searching knowledge base for error query '{query}': {e}")
+        
+        # Remove duplicates and limit results
+        unique_docs = []
+        seen_content = set()
+        for doc in all_error_docs:
+            content_key = doc.page_content[:100] if hasattr(doc, 'page_content') else str(doc)[:100]
+            if content_key not in seen_content:
+                unique_docs.append(doc)
+                seen_content.add(content_key)
+                if len(unique_docs) >= 4:  # Max 4 error-specific docs
+                    break
+        
+        logger.info(f"🎯 Final error-specific RAG results: {len(unique_docs)} unique documents")
+        
+        return {
+            'documentation_results': unique_docs,
+            'error_queries_used': error_queries[:3],
+            'total_errors_analyzed': len(deployment_errors)
         }
-        
+
+    def _load_flow_documentation(self) -> str:
+        """Load the complete Flow.md documentation file as foundational context"""
         try:
-            # Generate error-specific queries
-            error_queries = self.generate_error_specific_rag_queries(deployment_errors)
+            flow_doc_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'documentation', 'Flow.md')
             
-            if not error_queries:
-                logger.info("No error-specific queries generated, skipping error-specific RAG retrieval")
-                return error_knowledge
+            if not os.path.exists(flow_doc_path):
+                logger.warning(f"Flow documentation not found at: {flow_doc_path}")
+                return ""
             
-            # Search for error-specific solutions
-            for query in error_queries:
-                # Search troubleshooting category
-                troubleshooting_docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "troubleshooting", 
-                    "max_results": 2
-                })
-                error_knowledge["error_solutions"].extend(troubleshooting_docs)
-                
-                # Search validation rules
-                validation_docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "validation_rules",
-                    "max_results": 2
-                })
-                error_knowledge["validation_rules"].extend(validation_docs)
-                
-                # Search best practices for prevention
-                best_practice_docs = search_flow_knowledge_base.invoke({
-                    "query": query,
-                    "category": "best_practices",
-                    "max_results": 1
-                })
-                error_knowledge["troubleshooting_patterns"].extend(best_practice_docs)
+            with open(flow_doc_path, 'r', encoding='utf-8') as f:
+                content = f.read()
             
-            # Store all documentation results
-            all_error_docs = (error_knowledge["error_solutions"] + 
-                            error_knowledge["validation_rules"] + 
-                            error_knowledge["troubleshooting_patterns"])
-            error_knowledge["documentation_results"] = all_error_docs
-            
-            logger.info(f"Retrieved error-specific knowledge: {len(error_knowledge['error_solutions'])} solutions, "
-                       f"{len(error_knowledge['validation_rules'])} validation rules, "
-                       f"{len(error_knowledge['troubleshooting_patterns'])} patterns")
+            logger.info(f"📖 Loaded Flow documentation: {len(content)} characters from Flow.md")
+            return content
             
         except Exception as e:
-            logger.error(f"Error retrieving error-specific knowledge: {str(e)}")
-            
-        return error_knowledge
+            logger.error(f"Failed to load Flow documentation: {e}")
+            return ""
 
     def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any], error_specific_knowledge: Dict[str, Any] = None) -> str:
-        """Builds a comprehensive prompt for the LLM, incorporating RAG, memory, and error-specific knowledge."""
+        """Builds a comprehensive prompt for the LLM, incorporating RAG, memory, error-specific knowledge, and complete Flow documentation."""
         
         memory_context = self._get_memory_context(request.flow_api_name)
+        
+        # Load complete Flow documentation
+        flow_documentation = self._load_flow_documentation()
         
         # Start building the prompt
         prompt_parts = [
@@ -790,6 +797,25 @@ class EnhancedFlowBuilderAgent:
             
             f"\n## Flow API Name:\n`{request.flow_api_name}`",
         ]
+        
+        # --- Complete Flow Documentation (Foundational Reference) ---
+        if flow_documentation:
+            prompt_parts.extend([
+                "\n" + "="*50,
+                "## 📚 COMPLETE SALESFORCE FLOW METADATA DOCUMENTATION",
+                "This is the complete Salesforce Flow Metadata API documentation. Use this as your primary reference for:",
+                "- Flow XML structure and syntax",
+                "- All available flow elements and their properties", 
+                "- Field types, enumerations, and valid values",
+                "- API versioning and compatibility requirements",
+                "- Deployment rules and restrictions",
+                "",
+                "📖 REFERENCE DOCUMENTATION:",
+                "---",
+                flow_documentation,
+                "---",
+                "="*50 + "\n",
+            ])
         
         # --- Memory Context ---
         prompt_parts.extend([
@@ -1044,10 +1070,7 @@ RAG-ENHANCED ERROR RESOLUTION:
             ]
             
             # Invoke LLM with sufficient token limit for complete Flow XML
-            llm_response = self.llm.invoke(
-                messages,
-                max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096"))  # Use configurable max tokens
-            )
+            llm_response = self.llm.invoke(messages)
             
             # Step 5: Extract and validate XML from LLM response
             flow_xml = self._extract_and_validate_xml(llm_response.content, request)

@@ -1,0 +1,111 @@
+# =======================
+# AI PROVIDER CONFIGURATION
+# =======================
+
+# Global AI Model Configuration (fallback for all agents)
+# Options: "anthropic" or "gemini"
+AI_PROVIDER=anthropic
+
+# Global Model Name (specific model to use for the provider)
+MODEL_NAME=claude-3-5-sonnet-20241022
+
+# Global LLM Configuration
+MAX_TOKENS=4096
+
+# ===================
+# ANTHROPIC SETTINGS
+# ===================
+
+# Global Anthropic API Key
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# =================
+# GEMINI SETTINGS
+# =================
+
+# Global Gemini API Key (if using Gemini)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# ==================================
+# PER-AGENT AI MODEL CONFIGURATION
+# ==================================
+
+# Authentication Agent - Fast model for auth tasks
+# AUTHENTICATION_AI_PROVIDER=anthropic
+# AUTHENTICATION_MODEL_NAME=claude-3-haiku-20240307
+# AUTHENTICATION_MAX_TOKENS=1024
+
+# Flow Builder Agent - Powerful model for complex XML generation
+# FLOW_BUILDER_AI_PROVIDER=anthropic
+# FLOW_BUILDER_MODEL_NAME=claude-3-opus-20240229
+# FLOW_BUILDER_MAX_TOKENS=8192
+
+# Test Designer Agent - Creative model for test scenario generation
+# TEST_DESIGNER_AI_PROVIDER=gemini
+# TEST_DESIGNER_MODEL_NAME=gemini-pro
+# TEST_DESIGNER_MAX_TOKENS=4096
+
+# Web Search Agent - Efficient model for query processing
+# WEB_SEARCH_AI_PROVIDER=anthropic
+# WEB_SEARCH_MODEL_NAME=claude-3-5-sonnet-20241022
+# WEB_SEARCH_MAX_TOKENS=2048
+
+# Deployment Agent - Reliable model for deployment tasks
+# DEPLOYMENT_AI_PROVIDER=anthropic
+# DEPLOYMENT_MODEL_NAME=claude-3-5-sonnet-20241022
+# DEPLOYMENT_MAX_TOKENS=4096
+
+# Flow Validation Agent - Precise model for validation tasks
+# FLOW_VALIDATION_AI_PROVIDER=anthropic
+# FLOW_VALIDATION_MODEL_NAME=claude-3-5-sonnet-20241022
+# FLOW_VALIDATION_MAX_TOKENS=2048
+
+# =======================
+# OBSERVABILITY SETTINGS
+# =======================
+
+# LangSmith API Key for tracing and observability
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+
+# Alternative to LANGSMITH_API_KEY
+LANGCHAIN_API_KEY=your_langchain_api_key_here
+
+# =======================
+# WEB SEARCH SETTINGS
+# =======================
+
+# Tavily API Key for web search functionality (optional)
+TAVILY_API_KEY=your_tavily_api_key_here
+
+# =======================
+# WORKFLOW SETTINGS
+# =======================
+
+# Maximum build/deploy retry attempts (default: 3)
+MAX_BUILD_DEPLOY_RETRIES=3
+
+# LangGraph recursion limit (default: 50)
+LANGGRAPH_RECURSION_LIMIT=50
+
+# =======================
+# SALESFORCE SETTINGS
+# =======================
+
+# Salesforce JWT Bearer Flow Settings
+SALESFORCE_CLIENT_ID=your_connected_app_client_id
+SALESFORCE_PRIVATE_KEY_PATH=path/to/your/private_key.pem
+SALESFORCE_USERNAME=your_salesforce_username
+
+# =======================
+# RAG SETTINGS (Optional)
+# =======================
+
+# Supabase Configuration for RAG functionality
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_KEY=your_supabase_service_key
+
+# GitHub Token for documentation crawling
+GITHUB_TOKEN=your_github_token
+
+# OpenAI API Key for embeddings
+OPENAI_API_KEY=your_openai_api_key 
