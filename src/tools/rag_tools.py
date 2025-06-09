@@ -753,11 +753,248 @@ Include processMetadataValues for Flow Builder compatibility.""",
             "errors": [str(e)]
         }
 
+@tool
+def populate_flow_metadata_api_knowledge(populate_core_elements: bool = True, populate_validation_rules: bool = True) -> Dict[str, Any]:
+    """
+    Populate the knowledge base with core Flow Metadata API knowledge for better initial Flow generation.
+    This provides foundational understanding of Flow XML structure, elements, and validation rules.
+    
+    Args:
+        populate_core_elements: Whether to add core Flow elements documentation
+        populate_validation_rules: Whether to add Flow validation rules
+    
+    Returns:
+        Dictionary with population results
+    """
+    try:
+        results = {
+            "core_elements_added": 0,
+            "validation_rules_added": 0,
+            "errors": []
+        }
+        
+        if populate_core_elements:
+            core_elements_docs = [
+                {
+                    "content": """
+Flow XML Core Structure:
+- <?xml version="1.0" encoding="UTF-8"?>
+- <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+- Required elements: apiVersion, label, processType, status
+- Element types: screens, decisions, assignments, recordLookups, recordCreates, recordUpdates
+- Variables: dataType, isCollection, isInput, isOutput, name, value
+- Connectors: targetReference links elements together
+- Start element: has no connector input, begins flow execution
+                    """,
+                    "metadata": {
+                        "category": "core_structure",
+                        "source": "Flow_Metadata_API",
+                        "topic": "xml_structure",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """
+Flow Element Naming Requirements:
+- API names must be alphanumeric, start with letter
+- No spaces, hyphens, or special characters allowed  
+- Use camelCase or underscore_case consistently
+- Element references are case-sensitive
+- Must be unique within each element type
+- Examples: Get_Records, CreateRecord, UpdateOpportunity
+                    """,
+                    "metadata": {
+                        "category": "naming_conventions",
+                        "source": "Flow_Metadata_API",
+                        "topic": "api_names",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """
+Flow Variable Types and Usage:
+- Record variables: Single SObject records (dataType="SObject")
+- Collection variables: Multiple records (isCollection="true")
+- Primitive types: Text, Number, Boolean, Date, DateTime
+- Variable references: Use {!VariableName} in formulas
+- Input/Output variables: isInput="true" or isOutput="true"
+- Assignment vs direct reference patterns
+                    """,
+                    "metadata": {
+                        "category": "variables",
+                        "source": "Flow_Metadata_API", 
+                        "topic": "data_types",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """
+Flow Connector Rules:
+- Each element (except Start) needs incoming connector
+- Decision elements have outcome-based connectors
+- Loops have done/next connectors
+- Use targetReference to link elements
+- No circular references allowed
+- End flow with explicit termination or screen
+                    """,
+                    "metadata": {
+                        "category": "connectors",
+                        "source": "Flow_Metadata_API",
+                        "topic": "flow_logic",
+                        "priority": "medium"
+                    }
+                }
+            ]
+            
+            for doc in core_elements_docs:
+                if rag_manager.add_documentation(doc["content"], doc["metadata"]):
+                    results["core_elements_added"] += 1
+        
+        if populate_validation_rules:
+            validation_rules_docs = [
+                {
+                    "content": """
+Common Flow XML Validation Errors:
+- Duplicate elements: Each element must have unique name within type
+- Invalid references: All targetReference values must point to existing elements
+- XSD type mismatches: Variables references vs literal values in wrong contexts
+- Collection variable restrictions: Cannot use in inputAssignments fields
+- Required element children: Each element type has mandatory child elements
+                    """,
+                    "metadata": {
+                        "category": "validation_rules",
+                        "source": "Flow_Metadata_API",
+                        "topic": "error_prevention",
+                        "priority": "high"
+                    }
+                },
+                {
+                    "content": """
+Flow Status and Lifecycle:
+- status: Active (deployed), Draft (not deployed), Obsolete
+- API Version: Use latest supported version (59.0)
+- processType: Flow, Workflow, AutoLaunchedFlow
+- processMetadataValues: Required for Flow Builder compatibility
+- activeVersionNumber: Controls which version is active
+                    """,
+                    "metadata": {
+                        "category": "lifecycle",
+                        "source": "Flow_Metadata_API",
+                        "topic": "deployment",
+                        "priority": "medium"
+                    }
+                },
+                {
+                    "content": """
+Get Records Element Best Practices:
+- Use getFirstRecordOnly for single records
+- outputReference should point to collection variable for multiple records
+- Reference element directly (not elementName.Count) for record counting
+- Apply SOQL query limits and filters appropriately
+- Handle no records found scenarios
+                    """,
+                    "metadata": {
+                        "category": "get_records",
+                        "source": "Flow_Metadata_API",
+                        "topic": "data_operations",
+                        "priority": "high"
+                    }
+                }
+            ]
+            
+            for doc in validation_rules_docs:
+                if rag_manager.add_documentation(doc["content"], doc["metadata"]):
+                    results["validation_rules_added"] += 1
+        
+        logger.info(f"Added {results['core_elements_added']} core elements docs and {results['validation_rules_added']} validation rules docs")
+        return results
+        
+    except Exception as e:
+        error_msg = f"Error populating Flow Metadata API knowledge: {str(e)}"
+        logger.error(error_msg)
+        return {"core_elements_added": 0, "validation_rules_added": 0, "errors": [error_msg]}
+
+@tool
+def enhance_initial_flow_knowledge(flow_type: str = "all", use_case: str = None) -> Dict[str, Any]:
+    """
+    Retrieve enhanced knowledge specifically for initial Flow building attempts.
+    This complements the existing RAG system with targeted foundational knowledge.
+    
+    Args:
+        flow_type: Type of flow being built (Screen, Record-Triggered, etc.)
+        use_case: Specific use case (approval, automation, etc.)
+    
+    Returns:
+        Dictionary with enhanced knowledge for initial Flow building
+    """
+    try:
+        enhanced_knowledge = {
+            "foundational_concepts": [],
+            "metadata_api_guidelines": [],
+            "common_patterns": [],
+            "preventive_best_practices": []
+        }
+        
+        # Search for foundational Flow concepts
+        foundational_docs = rag_manager.search_knowledge_base(
+            query="Flow XML core structure elements variables connectors",
+            k=3,
+            filter_metadata={"category": "core_structure"}
+        )
+        enhanced_knowledge["foundational_concepts"] = [
+            {"content": doc.page_content, "metadata": doc.metadata} for doc in foundational_docs
+        ]
+        
+        # Get Metadata API specific guidelines
+        api_docs = rag_manager.search_knowledge_base(
+            query="Flow Metadata API validation naming conventions",
+            k=3,
+            filter_metadata={"source": "Flow_Metadata_API"}
+        )
+        enhanced_knowledge["metadata_api_guidelines"] = [
+            {"content": doc.page_content, "metadata": doc.metadata} for doc in api_docs
+        ]
+        
+        # Get preventive best practices
+        preventive_docs = rag_manager.search_knowledge_base(
+            query="Flow validation error prevention best practices",
+            k=2,
+            filter_metadata={"topic": "error_prevention"}
+        )
+        enhanced_knowledge["preventive_best_practices"] = [
+            {"content": doc.page_content, "metadata": doc.metadata} for doc in preventive_docs
+        ]
+        
+        # Use case specific patterns if provided
+        if use_case:
+            pattern_docs = rag_manager.search_knowledge_base(
+                query=f"{use_case} flow patterns examples",
+                k=2
+            )
+            enhanced_knowledge["common_patterns"] = [
+                {"content": doc.page_content, "metadata": doc.metadata} for doc in pattern_docs
+            ]
+        
+        total_docs = (len(enhanced_knowledge["foundational_concepts"]) + 
+                     len(enhanced_knowledge["metadata_api_guidelines"]) + 
+                     len(enhanced_knowledge["common_patterns"]) + 
+                     len(enhanced_knowledge["preventive_best_practices"]))
+        
+        logger.info(f"Enhanced initial Flow knowledge retrieved: {total_docs} total documents")
+        return enhanced_knowledge
+        
+    except Exception as e:
+        error_msg = f"Error retrieving enhanced initial Flow knowledge: {str(e)}"
+        logger.error(error_msg)
+        return {"error": error_msg}
+
 # Export tools for use in agents
 RAG_TOOLS = [
     search_flow_knowledge_base,
     find_similar_sample_flows,
     add_flow_documentation,
     sync_github_sample_flows,
-    populate_basic_flow_knowledge
+    populate_basic_flow_knowledge,
+    populate_flow_metadata_api_knowledge,
+    enhance_initial_flow_knowledge
 ] 

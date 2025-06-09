@@ -18,7 +18,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 import xml.etree.ElementTree as ET
 
-from ..tools.rag_tools import RAG_TOOLS, search_flow_knowledge_base, find_similar_sample_flows
+from ..tools.rag_tools import RAG_TOOLS, search_flow_knowledge_base, find_similar_sample_flows, enhance_initial_flow_knowledge
 from ..tools.flow_builder_tools import BasicFlowXmlGeneratorTool
 from ..schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from ..state.agent_workforce_state import AgentWorkforceState
@@ -557,10 +557,40 @@ class EnhancedFlowBuilderAgent:
             "sample_flows": [],
             "patterns": [],
             "troubleshooting": [],
-            "documentation_results": []
+            "documentation_results": [],
+            "foundational_knowledge": [],  # New: Core Flow Metadata API knowledge
+            "preventive_guidance": []      # New: Error prevention guidance
         }
         
         try:
+            # Enhanced: Get foundational Flow Metadata API knowledge for initial attempts
+            from ..tools.rag_tools import enhance_initial_flow_knowledge
+            foundational_knowledge = enhance_initial_flow_knowledge.invoke({
+                "flow_type": analysis.get("primary_use_case", "all"),
+                "use_case": analysis.get("primary_use_case")
+            })
+            
+            if foundational_knowledge and not foundational_knowledge.get("error"):
+                # Extract foundational concepts for better XML structure understanding
+                if foundational_knowledge.get("foundational_concepts"):
+                    knowledge["foundational_knowledge"].extend(foundational_knowledge["foundational_concepts"])
+                
+                # Extract Metadata API guidelines for proper Flow XML generation
+                if foundational_knowledge.get("metadata_api_guidelines"):
+                    knowledge["foundational_knowledge"].extend(foundational_knowledge["metadata_api_guidelines"])
+                
+                # Extract preventive best practices to avoid common errors
+                if foundational_knowledge.get("preventive_best_practices"):
+                    knowledge["preventive_guidance"].extend(foundational_knowledge["preventive_best_practices"])
+                
+                # Extract common patterns for the use case
+                if foundational_knowledge.get("common_patterns"):
+                    knowledge["patterns"].extend(foundational_knowledge["common_patterns"])
+                
+                logger.info(f"Retrieved enhanced foundational knowledge: "
+                           f"{len(knowledge['foundational_knowledge'])} foundational docs, "
+                           f"{len(knowledge['preventive_guidance'])} preventive guidance docs")
+            
             # Search for best practices
             for query in analysis["search_queries"]:
                 docs = search_flow_knowledge_base.invoke({
@@ -596,13 +626,17 @@ class EnhancedFlowBuilderAgent:
             knowledge["troubleshooting"] = troubleshooting_docs
             
             # Store all documentation results for prompt building
-            all_docs = knowledge["best_practices"] + knowledge["patterns"] + knowledge["troubleshooting"]
+            all_docs = (knowledge["best_practices"] + knowledge["patterns"] + 
+                       knowledge["troubleshooting"] + knowledge["foundational_knowledge"] + 
+                       knowledge["preventive_guidance"])
             knowledge["documentation_results"] = all_docs
             
             logger.info(f"Retrieved comprehensive knowledge: {len(knowledge['best_practices'])} best practices, "
                        f"{len(knowledge['sample_flows'])} sample flows, "
                        f"{len(knowledge['patterns'])} patterns, "
-                       f"{len(knowledge['troubleshooting'])} troubleshooting guides")
+                       f"{len(knowledge['troubleshooting'])} troubleshooting guides, "
+                       f"{len(knowledge['foundational_knowledge'])} foundational docs, "
+                       f"{len(knowledge['preventive_guidance'])} preventive guides")
             
         except Exception as e:
             logger.error(f"Error retrieving knowledge: {str(e)}")
@@ -612,7 +646,9 @@ class EnhancedFlowBuilderAgent:
                 "sample_flows": [],
                 "patterns": [],
                 "troubleshooting": [],
-                "documentation_results": []
+                "documentation_results": [],
+                "foundational_knowledge": [],
+                "preventive_guidance": []
             }
         
         return knowledge
@@ -762,6 +798,37 @@ class EnhancedFlowBuilderAgent:
             memory_context,
             "="*30 + "\n",
         ])
+
+        # --- Foundational Flow Knowledge (for initial attempts) ---
+        if knowledge.get('foundational_knowledge'):
+            prompt_parts.append("## 🏗️ FOUNDATIONAL FLOW METADATA API KNOWLEDGE:")
+            prompt_parts.append("Use this core knowledge to build proper Flow XML structure and avoid common validation errors.")
+            
+            foundational_docs = knowledge['foundational_knowledge'][:4]  # Top 4 foundational docs
+            for i, doc in enumerate(foundational_docs, 1):
+                if isinstance(doc, dict):
+                    content_preview = doc.get('content', '')[:350].strip()
+                    metadata = doc.get('metadata', {})
+                    category = metadata.get('category', 'foundational').replace('_', ' ').title()
+                    prompt_parts.append(f"📚 Foundation {i} ({category}):\n---\n{content_preview}\n---\n")
+                elif hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+                    content_preview = doc.page_content[:350].strip()
+                    category = doc.metadata.get('category', 'foundational').replace('_', ' ').title()
+                    prompt_parts.append(f"📚 Foundation {i} ({category}):\n---\n{content_preview}\n---\n")
+
+        # --- Preventive Guidance (for initial attempts) ---
+        if knowledge.get('preventive_guidance'):
+            prompt_parts.append("## 🛡️ ERROR PREVENTION GUIDANCE:")
+            prompt_parts.append("Apply this guidance proactively to prevent common Flow deployment failures.")
+            
+            preventive_docs = knowledge['preventive_guidance'][:3]  # Top 3 preventive docs
+            for i, doc in enumerate(preventive_docs, 1):
+                if isinstance(doc, dict):
+                    content_preview = doc.get('content', '')[:300].strip()
+                    prompt_parts.append(f"🚫 Prevention {i}:\n---\n{content_preview}\n---\n")
+                elif hasattr(doc, 'metadata') and hasattr(doc, 'page_content'):
+                    content_preview = doc.page_content[:300].strip()
+                    prompt_parts.append(f"🚫 Prevention {i}:\n---\n{content_preview}\n---\n")
 
         # --- Error-Specific RAG Knowledge (for retry attempts) ---
         if error_specific_knowledge and error_specific_knowledge.get('documentation_results'):
