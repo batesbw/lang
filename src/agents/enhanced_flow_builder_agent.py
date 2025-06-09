@@ -255,6 +255,7 @@ class EnhancedFlowBuilderAgent:
         6. Providing recommendations and explanations for design choices
         7. Adapting flows based on failure patterns and successful resolutions
         8. Maintaining memory of previous attempts with preserved successful patterns
+        9. Following critical Flow Rules that must NEVER be violated
         
         When building flows, always:
         - Start by understanding the business requirements thoroughly
@@ -267,6 +268,7 @@ class EnhancedFlowBuilderAgent:
         - Provide clear explanations for your design decisions
         - Learn from any deployment failures to improve future flows
         - BUILD UPON previous successful attempts - never regress to failed approaches
+        - ALWAYS follow the critical Flow Rules documented in FlowRules.md
         
         When fixing deployment failures:
         - Analyze the error message and categorize the failure type
@@ -277,6 +279,7 @@ class EnhancedFlowBuilderAgent:
         - Focus on the most likely root cause based on historical data and previous attempts
         - NEVER repeat approaches that already failed
         - ALWAYS preserve elements and patterns from successful attempts
+        - STRICTLY adhere to Flow Rules to prevent common architectural violations
         
         Focus on creating flows that are:
         - Performant and scalable
@@ -285,9 +288,11 @@ class EnhancedFlowBuilderAgent:
         - Following Salesforce best practices
         - Avoiding known failure patterns
         - Building upon successful patterns from previous attempts
+        - Compliant with critical Flow Rules (especially DML/loop violations)
         
         CRITICAL: If you see successful patterns from previous attempts, you MUST preserve and build upon them.
         Never regress to approaches that already failed. Each attempt should be better than the last.
+        CRITICAL: Always follow the Flow Rules - these are non-negotiable architectural requirements.
         """
     
     def _load_persisted_memory(self, persisted_memory_data: Dict[str, Any]) -> None:
@@ -781,6 +786,25 @@ class EnhancedFlowBuilderAgent:
             logger.error(f"Failed to load Flow documentation: {e}")
             return ""
 
+    def _load_flow_rules(self) -> str:
+        """Load the critical Flow Rules from FlowRules.md that must NEVER be violated"""
+        try:
+            flow_rules_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'documentation', 'FlowRules.md')
+            
+            if not os.path.exists(flow_rules_path):
+                logger.warning(f"Flow Rules documentation not found at: {flow_rules_path}")
+                return ""
+            
+            with open(flow_rules_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            logger.info(f"📋 Loaded Flow Rules: {len(content)} characters from FlowRules.md")
+            return content.strip()
+            
+        except Exception as e:
+            logger.error(f"Failed to load Flow Rules: {e}")
+            return ""
+
     def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any], error_specific_knowledge: Dict[str, Any] = None) -> str:
         """Builds a comprehensive prompt for the LLM, incorporating RAG, memory, error-specific knowledge, and complete Flow documentation."""
         
@@ -788,6 +812,9 @@ class EnhancedFlowBuilderAgent:
         
         # Load complete Flow documentation
         flow_documentation = self._load_flow_documentation()
+        
+        # Load critical Flow Rules
+        flow_rules = self._load_flow_rules()
         
         # Start building the prompt
         prompt_parts = [
@@ -837,6 +864,20 @@ class EnhancedFlowBuilderAgent:
                 ])
             
             prompt_parts.append("")  # Add spacing
+        
+        # --- CRITICAL FLOW RULES (Must be placed prominently) ---
+        if flow_rules:
+            prompt_parts.extend([
+                "\n" + "🚨" * 50,
+                "## ⚠️ CRITICAL FLOW RULES - MUST NEVER BE VIOLATED ⚠️",
+                "These are non-negotiable architectural rules that MUST be followed in ALL flow designs:",
+                "",
+                flow_rules,
+                "",
+                "❌ VIOLATION OF THESE RULES WILL CAUSE FLOW FAILURE",
+                "✅ ALWAYS check your flow design against these rules before generating XML",
+                "🚨" * 50 + "\n",
+            ])
         
         # --- Complete Flow Documentation (Foundational Reference) ---
         if flow_documentation:
@@ -996,8 +1037,15 @@ class EnhancedFlowBuilderAgent:
                 "10. Ensure the flow logic implements the business requirements described in the user story",
             ])
         
+        # Add critical Flow Rules reminder
+        if flow_rules:
+            prompt_parts.extend([
+                "11. CRITICAL: Follow ALL Flow Rules listed above - NEVER violate them",
+                "12. VERIFY: Check your flow design against Flow Rules before generating XML",
+            ])
+        
         prompt_parts.extend([
-            "11. Return ONLY the XML - no explanations or markdown",
+            "13. Return ONLY the XML - no explanations or markdown",
             "",
             "START YOUR RESPONSE WITH: <?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         ])
@@ -1049,6 +1097,12 @@ CRITICAL INSTRUCTIONS:
 10. Start your response immediately with <?xml or <Flow - no other text
 11. End your response immediately after </Flow> - no other text
 
+🚨 CRITICAL FLOW RULES (MUST NEVER BE VIOLATED):
+- NEVER put a DML statement inside of a loop
+- Always follow the Flow Rules documented in FlowRules.md
+- These rules are non-negotiable and violations will cause flow failure
+- Check your flow design against these rules before generating XML
+
 RESPONSE FORMAT:
 Your response must be pure XML that starts with either:
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1092,6 +1146,13 @@ CRITICAL SALESFORCE FLOW RESTRICTIONS:
    - Consolidate duplicate logic into a single element rather than creating duplicates
    - Review the entire XML structure to ensure no element names are repeated within their type
 
+5. DML AND LOOPS (CRITICAL ARCHITECTURAL RULE):
+   - NEVER put DML statements (Create, Update, Delete Records) inside loops
+   - Always collect records outside the loop, then perform DML operations on collections
+   - Use Assignment elements within loops to build collections
+   - Perform Create/Update/Delete Records elements after the loop completes
+   - This prevents hitting Salesforce governor limits and ensures proper performance
+
 COMMON DEPLOYMENT FIXES:
 - API names must be alphanumeric and start with a letter
 - Remove spaces, hyphens, and special characters from API names
@@ -1100,6 +1161,7 @@ COMMON DEPLOYMENT FIXES:
 - Use proper XML formatting and indentation
 - For aggregating/counting: Use Get Records with collection output, then reference the collection size
 - ELIMINATE DUPLICATE ELEMENTS: Check for and remove any duplicate elements (same name within same type)
+- AVOID DML IN LOOPS: Never place DML operations inside loop structures
 
 FAILURE LEARNING:
 - If this is a retry attempt, you will see specific error analysis and fixes needed
@@ -1108,12 +1170,14 @@ FAILURE LEARNING:
 - Pay special attention to collection variable usage restrictions
 - Verify all element references are correct and point to existing elements
 - SPECIAL ATTENTION: If the error mentions "duplicate" or "duplicated", carefully scan the XML for duplicate elements and remove them
+- CRITICAL: Always check for DML inside loops - this is a common architectural violation
 
 RAG-ENHANCED ERROR RESOLUTION:
 - When error-specific documentation is provided, prioritize those solutions
 - Apply the specific fixes and patterns recommended in the knowledge base
 - Use the validation rules and best practices from the documentation
-- Follow the troubleshooting patterns for similar error scenarios"""
+- Follow the troubleshooting patterns for similar error scenarios
+- Always verify that Flow Rules are followed in the solution"""
 
             messages = [
                 SystemMessage(content=xml_system_prompt),
