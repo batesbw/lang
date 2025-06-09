@@ -419,6 +419,7 @@ class EnhancedFlowBuilderAgent:
         }
         
         logger.info(f"Requirements analysis: {analysis}")
+        logger.info(f"Generated {len(analysis['search_queries'])} search queries from requirements.")
         return analysis
     
     def _determine_use_case(self, request: FlowBuildRequest) -> str:
@@ -498,12 +499,58 @@ class EnhancedFlowBuilderAgent:
         return queries
     
     def _generate_fix_prompt(self, request: FlowBuildRequest, failure_analysis: Dict[str, Any], failure_knowledge: Dict[str, Any]) -> str:
-        """Generate a prompt for fixing deployment failures - REMOVED for simplification"""
-        # Method removed - using simplified approach
-        return ""
+        """Generates a targeted prompt for the LLM to fix a failed flow deployment."""
+        
+        prompt_parts = [
+            "## Mission: Debug and Fix a Failed Salesforce Flow Deployment",
+            "You are a Salesforce expert troubleshooter. A previous attempt to deploy a Flow failed. Your task is to analyze the error, examine the faulty XML, and produce a corrected version.",
+            
+            "\n" + "="*30,
+            "## FAILURE ANALYSIS",
+            f"**Flow Name:** `{request.flow_api_name}`",
+            
+            "\n### Deployment Error Message:",
+            "```",
+            failure_analysis.get('error_details', 'No error details provided.'),
+            "```",
+
+            "\n### Faulty Flow XML (This is the file that needs to be fixed):",
+            "```xml",
+            failure_analysis.get('failed_flow_xml', '<error>No XML provided</error>'),
+            "```",
+            "="*30 + "\n",
+        ]
+
+        # --- RAG: Knowledge to Help Fix the Error ---
+        if failure_knowledge.get('documentation_results'):
+            prompt_parts.append("## Relevant Documentation (Use this to find the correct syntax and fix the error):")
+            for i, doc in enumerate(failure_knowledge['documentation_results'][:2], 1): # Top 2 docs for fixing
+                source = doc.metadata.get('source', 'Unknown')
+                content_preview = doc.page_content[:500].strip()
+                prompt_parts.append(f"📄 Doc {i} (from {source}):\n---\n{content_preview}\n---\n")
+
+        if failure_knowledge.get('sample_flow_results'):
+            prompt_parts.append("## Similar Correct Flow Examples (Use these as a reference for the correct structure):")
+            for i, flow in enumerate(failure_knowledge['sample_flow_results'][:1], 1): # Top 1 example for fixing
+                prompt_parts.append(f"🔧 Example: {flow.get('flow_name')}")
+                prompt_parts.append(f"   Description: {flow.get('description')}")
+                prompt_parts.append(f"   XML Snippet:\n```xml\n{flow.get('flow_xml', '')[:600].strip()}\n```\n")
+
+        # --- Final Instructions ---
+        prompt_parts.extend([
+            "\n## Your Task:",
+            "1.  **Analyze the Error:** Carefully read the 'Deployment Error Message'.",
+            "2.  **Inspect the XML:** Examine the 'Faulty Flow XML' to locate the source of the error.",
+            "3.  **Consult the Knowledge:** Use the 'Relevant Documentation' and 'Similar Correct Flow Examples' to understand the correct implementation.",
+            "4.  **Correct the XML:** Rewrite the provided 'Faulty FlowXML' to fix the specific error. Do not change other parts of the flow unless necessary to resolve the error.",
+            "5.  **Generate Only the Corrected XML:** Your output must be the complete, valid, and corrected XML for the `.flow-meta.xml` file, inside a single `<?xml ...>` block.",
+            "6.  **Do not** add any explanations or comments outside of the XML block."
+        ])
+        
+        return "\n".join(prompt_parts)
 
     def retrieve_knowledge(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Retrieve relevant knowledge from RAG sources"""
+        """Retrieves knowledge from RAG tools based on the analysis of the requirements."""
         
         knowledge = {
             "best_practices": [],
@@ -568,397 +615,65 @@ class EnhancedFlowBuilderAgent:
         return knowledge
     
     def generate_enhanced_prompt(self, request: FlowBuildRequest, knowledge: Dict[str, Any]) -> str:
-        """Generate a unified prompt with user story, RAG knowledge, memory context, and optional retry context"""
+        """Builds a comprehensive prompt for the LLM, incorporating RAG and memory."""
         
+        memory_context = self._get_memory_context(request.flow_api_name)
+        
+        # Start building the prompt
         prompt_parts = [
-            f"Create a Salesforce flow based on the following requirements:",
-            f"Flow Name: {request.flow_api_name}",
-            f"Flow Label: {request.flow_label}",
-            f"Description: {request.flow_description}",
-            ""
+            "## Mission: Create a Salesforce Flow from a User Story",
+            "Your task is to act as an expert Salesforce developer and write the complete XML for a new Salesforce Flow based on the user's requirements.",
+            "You must generate a single, valid `.flow-meta.xml` file.",
+            
+            "\n## User Story & Requirements:",
+            f"'{request.requirements}'",
+            
+            f"\n## Flow API Name:\n`{request.flow_api_name}`",
         ]
         
-        # Add TDD context if available - this is the key enhancement for test-driven development
-        if request.tdd_context:
-            tdd_context = request.tdd_context
-            prompt_parts.extend([
-                "🧪 TEST-DRIVEN DEVELOPMENT CONTEXT:",
-                "This Flow is being built using a Test-Driven Development approach.",
-                "The test scenarios and Apex test classes have already been deployed.",
-                "Your job is to build a Flow that will make these tests PASS.",
-                ""
-            ])
-            
-            # Add test scenarios information
-            test_scenarios = tdd_context.get("test_scenarios", [])
-            if test_scenarios:
-                prompt_parts.extend([
-                    "📋 DEPLOYED TEST SCENARIOS (Build Flow to satisfy these):",
-                ])
-                for i, scenario in enumerate(test_scenarios, 1):
-                    scenario_name = scenario.get("title", scenario.get("name", f"Scenario {i}"))
-                    scenario_desc = scenario.get("description", "")
-                    scenario_type = scenario.get("scenario_type", "").title()
-                    priority = scenario.get("priority", "Medium")
-                    
-                    prompt_parts.extend([
-                        f"{i}. {scenario_name} ({scenario_type} - {priority} Priority)",
-                        f"   Description: {scenario_desc}",
-                    ])
-                    
-                    # Add test steps if available
-                    test_steps = scenario.get("test_steps", [])
-                    if test_steps:
-                        prompt_parts.append("   Test Steps:")
-                        for step in test_steps[:3]:  # Show first 3 steps
-                            prompt_parts.append(f"     • {step}")
-                        if len(test_steps) > 3:
-                            prompt_parts.append(f"     ... and {len(test_steps) - 3} more steps")
-                    
-                    # Add expected outcomes
-                    expected_outcomes = scenario.get("expected_outcomes", [])
-                    if expected_outcomes:
-                        prompt_parts.append("   Expected Outcomes:")
-                        for outcome in expected_outcomes[:2]:  # Show first 2 outcomes
-                            prompt_parts.append(f"     ✓ {outcome}")
-                        if len(expected_outcomes) > 2:
-                            prompt_parts.append(f"     ... and {len(expected_outcomes) - 2} more outcomes")
-                    
-                    # Add success criteria
-                    success_criteria = scenario.get("success_criteria", [])
-                    if success_criteria:
-                        prompt_parts.append("   Success Criteria:")
-                        for criteria in success_criteria[:2]:  # Show first 2 criteria
-                            prompt_parts.append(f"     ✓ {criteria}")
-                        if len(success_criteria) > 2:
-                            prompt_parts.append(f"     ... and {len(success_criteria) - 2} more criteria")
-                    
-                    prompt_parts.append("")
-                
-                prompt_parts.extend([
-                    "🎯 TDD REQUIREMENT:",
-                    "Your Flow MUST be designed to make all these test scenarios pass.",
-                    "Focus on implementing the exact functionality that the tests expect.",
-                    ""
-                ])
-            
-            # Add Apex test classes information
-            apex_test_classes = tdd_context.get("apex_test_classes", [])
-            if apex_test_classes:
-                prompt_parts.extend([
-                    "🧪 DEPLOYED APEX TEST CLASSES (Flow must pass these tests):",
-                ])
-                for i, test_class in enumerate(apex_test_classes, 1):
-                    class_name = test_class.get("class_name", f"TestClass{i}")
-                    test_methods = test_class.get("test_methods", [])
-                    
-                    prompt_parts.extend([
-                        f"{i}. {class_name} ({len(test_methods)} test methods)",
-                    ])
-                    
-                    # Show test method names and descriptions
-                    for method in test_methods[:3]:  # Show first 3 methods
-                        method_name = method.get("method_name", "Unknown")
-                        method_desc = method.get("description", "")
-                        prompt_parts.append(f"     • {method_name}: {method_desc}")
-                    
-                    if len(test_methods) > 3:
-                        prompt_parts.append(f"     ... and {len(test_methods) - 3} more test methods")
-                    
-                    prompt_parts.append("")
-                
-                prompt_parts.extend([
-                    "⚠️ CRITICAL TDD CONSTRAINT:",
-                    "The Apex test classes are already deployed and expecting specific Flow behavior.",
-                    "Your Flow implementation must match what these tests are validating.",
-                    "Study the test scenarios above to understand the exact requirements.",
-                    ""
-                ])
-            
-            # Add TDD best practices
-            prompt_parts.extend([
-                "🔬 TDD DEVELOPMENT PRINCIPLES:",
-                "1. RED-GREEN-REFACTOR: Tests are already written (RED), now make them pass (GREEN)",
-                "2. Focus on making tests pass with the simplest implementation that works",
-                "3. Implement only the functionality that is actually tested",
-                "4. Ensure your Flow logic aligns with the test expectations",
-                "5. Consider edge cases and error scenarios covered by the tests",
-                ""
-            ])
-        
-        # Add memory context from previous attempts
-        memory_context = self._get_memory_context(request.flow_api_name)
-        if memory_context and "No previous attempts found" not in memory_context:
-            prompt_parts.extend([
-                "CONVERSATION MEMORY - PREVIOUS ATTEMPTS:",
-                memory_context,
-                ""
-            ])
-        
-        # Add comprehensive user story context if available
-        if request.user_story:
-            prompt_parts.extend([
-                "USER STORY:",
-                f"Title: {request.user_story.title}",
-                f"Description: {request.user_story.description}",
-                "",
-                "ACCEPTANCE CRITERIA:",
-            ])
-            for i, criteria in enumerate(request.user_story.acceptance_criteria, 1):
-                prompt_parts.append(f"{i}. {criteria}")
-            
-            prompt_parts.extend([
-                "",
-                f"Priority: {request.user_story.priority}",
-            ])
-            
-            if request.user_story.business_context:
-                prompt_parts.extend([
-                    f"Business Context: {request.user_story.business_context}",
-                    ""
-                ])
-            
-            if request.user_story.affected_objects:
-                prompt_parts.extend([
-                    f"Affected Objects: {', '.join(request.user_story.affected_objects)}",
-                    ""
-                ])
-            
-            if request.user_story.user_personas:
-                prompt_parts.extend([
-                    f"User Personas: {', '.join(request.user_story.user_personas)}",
-                    ""
-                ])
-        
-        # Add best practices from general RAG
-        if knowledge.get("best_practices"):
-            prompt_parts.append("SALESFORCE FLOW BEST PRACTICES:")
-            for doc in knowledge["best_practices"][:3]:
-                prompt_parts.append(f"- {doc['content'][:200]}...")
-            prompt_parts.append("")
-        
-        # Add sample flow context
-        if knowledge.get("sample_flows"):
-            prompt_parts.append("SIMILAR SAMPLE FLOWS FOR REFERENCE:")
-            for i, flow in enumerate(knowledge["sample_flows"][:2], 1):
-                prompt_parts.append(f"{i}. {flow['flow_name']}: {flow['description']}")
-                prompt_parts.append(f"   Use case: {flow['use_case']}")
-                prompt_parts.append(f"   Tags: {', '.join(flow['tags'])}")
-            prompt_parts.append("")
-        
-        # Add pattern guidance
-        if knowledge.get("patterns"):
-            prompt_parts.append("RELEVANT PATTERNS:")
-            for doc in knowledge["patterns"][:2]:
-                prompt_parts.append(f"- {doc['content'][:300]}...")
-            prompt_parts.append("")
-        
-        # Add retry context if this is a retry attempt
-        if request.retry_context:
-            retry_context = request.retry_context
-            deployment_error = retry_context.get("deployment_error")
-            component_errors = retry_context.get("component_errors", [])
-            original_flow_xml = retry_context.get("original_flow_xml")
-            retry_attempt = retry_context.get("retry_attempt", 1)
-            error_analysis = retry_context.get("error_analysis", {})
-            specific_fixes = retry_context.get("specific_fixes_needed", [])
-            error_patterns = retry_context.get("common_patterns", [])
-            previous_summary = retry_context.get("previous_attempts_summary", "")
-            
-            # Handle deployment failures only (validation removed from workflow)
-            if deployment_error or original_flow_xml:
-                prompt_parts.extend([
-                    f"🔄 DEPLOYMENT RETRY CONTEXT (Attempt #{retry_attempt}):",
-                    "The previous flow deployment FAILED and must be completely rebuilt to fix the errors.",
-                    ""
-                ])
-                
-                if deployment_error:
-                    prompt_parts.extend([
-                        "❌ ORIGINAL DEPLOYMENT ERROR:",
-                        f"{deployment_error}",
-                        ""
-                    ])
-                
-                if component_errors:
-                    prompt_parts.append("🔍 COMPONENT-LEVEL ERRORS:")
-                    for error in component_errors:
-                        if isinstance(error, dict):
-                            prompt_parts.append(f"- {error.get('componentType', 'Unknown')}: {error.get('problem', 'Unknown error')}")
-                        else:
-                            prompt_parts.append(f"- {str(error)}")
-                    prompt_parts.append("")
-                
-                if original_flow_xml:
-                    # Don't truncate the XML - include it all for proper analysis
-                    # But add a clear separator to show where it ends
-                    prompt_parts.extend([
-                        "🔍 PREVIOUS FLOW XML (ANALYZE FOR SPECIFIC ERRORS TO FIX):",
-                        "```xml",
-                        original_flow_xml,
-                        "```",
-                        "⚠️ END OF PREVIOUS FLOW XML",
-                        ""
-                    ])
-                
-                prompt_parts.extend([
-                    "🎯 CRITICAL RETRY REQUIREMENTS:",
-                    "1. ANALYZE the previous flow XML above to understand what was implemented",
-                    "2. IDENTIFY the specific errors mentioned in the deployment error",
-                    "3. FIX ONLY those specific errors - do not make unnecessary changes",
-                    "4. PRESERVE all other aspects of the flow that were working correctly",
-                    "5. MAINTAIN the same business logic and flow structure where possible",
-                    "6. ENSURE the flow still fulfills the original user story requirements",
-                    ""
-                ])
-            
-            if error_analysis:
-                prompt_parts.extend([
-                    "📊 STRUCTURED ERROR ANALYSIS:",
-                    f"Error Type: {error_analysis.get('error_type', 'unknown')}",
-                    f"Severity: {error_analysis.get('severity', 'medium')}",
-                    ""
-                ])
-                
-                # Special handling for duplicate elements error
-                if error_analysis.get('error_type') == 'duplicate_elements':
-                    duplicated_element = error_analysis.get('dynamic_context', {}).get('duplicated_element', 'element')
-                    prompt_parts.extend([
-                        "🚨 CRITICAL DUPLICATE ELEMENT ERROR DETECTED:",
-                        f"The previous XML contains duplicate '{duplicated_element}' elements with the same name.",
-                        "",
-                        "🔍 DUPLICATE ELEMENT FIX INSTRUCTIONS:",
-                        f"1. Scan the previous XML for ALL <{duplicated_element}> elements",
-                        f"2. Look for multiple <{duplicated_element}> elements that have the same <name> value",
-                        f"3. REMOVE the duplicate <{duplicated_element}> elements - keep only ONE of each unique name",
-                        f"4. If the duplicate logic is needed, CONSOLIDATE it into a single <{duplicated_element}> element",
-                        f"5. Ensure each remaining <{duplicated_element}> element has a UNIQUE <name> within the Flow",
-                        "",
-                        "⚠️ CRITICAL: Salesforce Flow metadata does NOT allow duplicate element names within the same element type.",
-                        f"You MUST ensure NO two <{duplicated_element}> elements share the same <name> value.",
-                        ""
-                    ])
-                
-                # Add specific fixes if available
-                specific_fixes = error_analysis.get('specific_fixes_needed', [])
-                if specific_fixes:
-                    prompt_parts.extend([
-                        "🔧 SPECIFIC FIXES REQUIRED:",
-                        "These are the exact issues you MUST fix in the Flow XML:"
-                    ])
-                    for i, fix in enumerate(specific_fixes, 1):
-                        prompt_parts.append(f"{i}. {fix}")
-                    prompt_parts.extend([
-                        "",
-                        "⚠️ CRITICAL: Apply ALL fixes listed above - these address the exact deployment error.",
-                        ""
-                    ])
-                
-                if error_analysis.get('api_name_issues'):
-                    prompt_parts.extend([
-                        "🏷️ API NAME ISSUES DETECTED:",
-                        "- Review API names in the previous XML and fix any that are invalid",
-                        "- ALL API names must be alphanumeric and start with a letter",
-                        "- NO spaces, hyphens, or special characters allowed",
-                        ""
-                    ])
-                
-                if error_analysis.get('structural_issues'):
-                    prompt_parts.extend([
-                        "🏗️ STRUCTURAL ISSUES DETECTED:",
-                    ])
-                    for issue in error_analysis['structural_issues']:
-                        prompt_parts.append(f"- {issue}")
-                    prompt_parts.append("")
-                
-                if error_analysis.get('xml_issues'):
-                    prompt_parts.extend([
-                        "📄 XML ISSUES DETECTED:",
-                    ])
-                    for issue in error_analysis['xml_issues']:
-                        prompt_parts.append(f"- {issue}")
-                    prompt_parts.append("")
-            
-            if specific_fixes:
-                prompt_parts.extend([
-                    "🔧 SPECIFIC FIXES REQUIRED:",
-                    "Based on the deployment error, these are the exact issues to address:",
-                ])
-                for i, fix in enumerate(specific_fixes, 1):
-                    prompt_parts.append(f"{i}. {fix}")
-                prompt_parts.extend([
-                    "",
-                    "🎯 FIXING APPROACH:",
-                    "- Take the previous flow XML as your starting point",
-                    "- Make ONLY the minimal changes needed to fix the specific errors listed above",
-                    "- Do NOT redesign or restructure the flow unnecessarily", 
-                    "- Preserve the existing business logic and flow elements where they work",
-                    "- Focus on the root cause of each specific error",
-                    ""
-                ])
-            
-            if error_patterns:
-                prompt_parts.extend([
-                    "⚠️ ERROR PATTERNS TO AVOID:",
-                    f"The following patterns caused the previous failure: {', '.join(error_patterns)}",
-                    "- Analyze these patterns in the context of the previous XML",
-                    "- Ensure your fixes address these specific failure patterns",
-                    ""
-                ])
-            
-            if previous_summary:
-                prompt_parts.extend([
-                    "📚 PREVIOUS ATTEMPTS CONTEXT:",
-                    previous_summary,
-                    ""
-                ])
-            
-            if deployment_error:
-                prompt_parts.extend([
-                    "🔥 SPECIFIC DEPLOYMENT ERROR TO FIX:",
-                    deployment_error,
-                    "",
-                    "💡 ERROR ANALYSIS APPROACH:",
-                    "- Read the deployment error message carefully",
-                    "- Locate the problematic elements/sections in the previous XML",
-                    "- Apply the precise fix needed for this specific error",
-                    "- Verify that your fix resolves the exact issue mentioned",
-                    ""
-                ])
-            
-            prompt_parts.extend([
-                "🛠️ DEPLOYMENT SUCCESS CHECKLIST:",
-                "Review your changes against these criteria:",
-                "✓ The specific deployment error has been addressed",
-                "✓ No unnecessary changes were made to working parts of the flow",
-                "✓ The flow still meets the original business requirements",
-                "✓ All API names are valid (alphanumeric, start with letter, no spaces/hyphens)",
-                "✓ Flow structure and references are correct",
-                "✓ XML is well-formed and follows Salesforce schema",
-                ""
-            ])
-            
-            prompt_parts.extend([
-                "💡 FIXING STRATEGY:",
-                "1. ANALYZE - Study the previous XML and identify the problematic sections",
-                "2. LOCATE - Find the exact elements/attributes causing the deployment error",
-                "3. FIX - Make precise, minimal changes to resolve the specific issues",
-                "4. PRESERVE - Keep everything else from the previous flow intact",
-                "5. VALIDATE - Ensure your changes address the deployment error completely",
-                ""
-            ])
-        
+        # --- Memory Context ---
         prompt_parts.extend([
-            "📋 FINAL REQUIREMENTS:",
-            "1. Generate ONLY complete, valid Salesforce Flow XML",
-            "2. Follow Salesforce flow best practices for performance and maintainability",
-            "3. Include proper error handling and fault paths where appropriate",
-            "4. Use descriptive names for all flow elements",
-            "5. Ensure the flow is scalable and follows governor limit best practices",
-            "6. If this is a retry, implement ALL required fixes and avoid previous error patterns",
-            "7. DO NOT include explanations, markdown, or any text other than the XML",
-            "",
-            "🚀 Generate the complete Flow XML now:"
+            "\n" + "="*30,
+            "## MEMORY & LEARNING FROM PAST ATTEMPTS",
+            memory_context,
+            "="*30 + "\n",
+        ])
+
+        # --- RAG: Documentation Context ---
+        if knowledge.get('documentation_results'):
+            prompt_parts.append("## Relevant Documentation (Use this for correct syntax and best practices):")
+            for i, doc in enumerate(knowledge['documentation_results'][:3], 1): # Top 3 docs
+                source = doc.metadata.get('source', 'Unknown')
+                content_preview = doc.page_content[:400].strip()
+                prompt_parts.append(f"📄 Doc {i} (from {source}):\n---\n{content_preview}\n---\n")
+        
+        # --- RAG: Golden Examples ---
+        if knowledge.get('sample_flow_results'):
+            prompt_parts.append("## Similar Flow Examples (Use these as a structural template):")
+            for i, flow in enumerate(knowledge['sample_flow_results'][:2], 1): # Top 2 examples
+                prompt_parts.append(f"🔧 Example {i}: {flow.get('flow_name')}")
+                prompt_parts.append(f"   Description: {flow.get('description')}")
+                # Provide a snippet of the XML as a template
+                xml_snippet = flow.get('flow_xml', '')
+                # Basic snippet extraction
+                start_index = xml_snippet.find('<processMetadataValues>')
+                if start_index == -1:
+                    start_index = xml_snippet.find('<screens>')
+                if start_index != -1:
+                    xml_snippet = xml_snippet[start_index:]
+
+                prompt_parts.append(f"   XML Snippet:\n```xml\n{xml_snippet[:500].strip()}\n```\n")
+
+        # --- Final Instructions ---
+        prompt_parts.extend([
+            "\n## Your Task:",
+            "1.  **Analyze** all the provided context: the user story, memory from past attempts, documentation, and examples.",
+            "2.  **Synthesize** this information to create a robust and valid Flow.",
+            "3.  **Prioritize** using patterns from the 'Similar Flow Examples' as a template for the overall structure.",
+            "4.  **Refer** to the 'Relevant Documentation' for precise syntax for elements like variables, decisions, and actions.",
+            "5.  **Pay Attention** to the MEMORY section. Do NOT repeat past mistakes. Build upon successful patterns.",
+            "6.  **Generate** the complete, final XML for the `.flow-meta.xml` file inside a single `<?xml ...>` block.",
+            "7.  **Do not** add any explanations or comments outside of the XML block."
         ])
         
         return "\n".join(prompt_parts)

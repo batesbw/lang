@@ -31,7 +31,7 @@
 - [X] **Task 1.2.2**: Implement `AdvancedFlowXmlGeneratorTool` (Superseded `BasicFlowXmlGeneratorTool`)
 - [X] **Task 1.2.3**: Build `EnhancedFlowBuilderAgent` (Superseded `FlowBuilderAgent`)
 - [X] **Task 1.2.4**: Implement Natural Language Requirement Processing
-- [X] **Task 1.2.5**: Implement RAG Tool for Best Practices
+- [ ] **Task 1.2.5**: Implement RAG Tool for Best Practices
 - [X] **Task 1.2.6**: Implement Flow Repair Capability (for validation, deployment, and test failures)
 
 ### Agent 3: DeploymentAgent

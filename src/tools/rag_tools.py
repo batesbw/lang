@@ -14,6 +14,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import asyncio
+import xml.etree.ElementTree as ET
 
 from langchain_core.tools import tool
 from langchain_core.documents import Document
@@ -145,18 +146,51 @@ class RAGManager:
             -- Create sample flows table
             CREATE TABLE IF NOT EXISTS sample_flows (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                flow_name TEXT NOT NULL,
+                flow_name TEXT NOT NULL UNIQUE,
                 flow_xml TEXT NOT NULL,
                 description TEXT,
                 use_case TEXT,
                 complexity_level TEXT,
                 tags TEXT[],
                 github_url TEXT,
+                embedding VECTOR(1536),
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             );
             
             -- Create index for sample flows search
+            CREATE INDEX IF NOT EXISTS sample_flows_embedding_idx 
+            ON sample_flows USING hnsw (embedding vector_cosine_ops);
+            
+            -- Create function for similarity search on sample flows
+            CREATE OR REPLACE FUNCTION match_sample_flows (
+                query_embedding VECTOR(1536),
+                filter JSONB DEFAULT '{}',
+                match_threshold FLOAT DEFAULT 0.7,
+                match_count INT DEFAULT 5
+            ) RETURNS TABLE (
+                id UUID,
+                flow_name TEXT,
+                description TEXT,
+                similarity FLOAT,
+                flow_xml TEXT
+            ) LANGUAGE plpgsql AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT
+                    sample_flows.id,
+                    sample_flows.flow_name,
+                    sample_flows.description,
+                    1 - (sample_flows.embedding <=> query_embedding) AS similarity,
+                    sample_flows.flow_xml
+                FROM sample_flows
+                WHERE 1 - (sample_flows.embedding <=> query_embedding) > match_threshold
+                ORDER BY sample_flows.embedding <=> query_embedding
+                LIMIT match_count;
+            END;
+            $$;
+
+            -- Create index for sample flows tags
             CREATE INDEX IF NOT EXISTS sample_flows_tags_idx ON sample_flows USING GIN (tags);
             CREATE INDEX IF NOT EXISTS sample_flows_use_case_idx ON sample_flows (use_case);
             """
@@ -169,6 +203,37 @@ class RAGManager:
             
         except Exception as e:
             logger.error(f"Error setting up Supabase tables: {str(e)}")
+            return False
+    
+    def add_sample_flow_from_xml(self, flow_name: str, xml_content: str) -> bool:
+        """Adds a sample flow from XML content to the 'sample_flows' table."""
+        if not self.supabase_client:
+            logger.error("Supabase client not initialized. Cannot add sample flow.")
+            return False
+        
+        try:
+            # Extract metadata from the XML content
+            description = self._extract_flow_description(xml_content)
+            use_case = self._infer_use_case(flow_name, xml_content)
+            complexity = self._assess_complexity(xml_content)
+            tags = self._extract_tags(xml_content)
+            
+            flow_data = {
+                "flow_name": flow_name,
+                "flow_xml": xml_content,
+                "description": description,
+                "use_case": use_case,
+                "complexity_level": complexity,
+                "tags": tags,
+                # Embed the full XML content for semantic search
+                "embedding": self.embeddings.embed_query(xml_content)
+            }
+            
+            self.supabase_client.table("sample_flows").upsert(flow_data, on_conflict='flow_name').execute()
+            logger.info(f"Successfully upserted sample flow '{flow_name}' in the database.")
+            return True
+        except Exception as e:
+            logger.error(f"Error upserting sample flow from XML for '{flow_name}': {e}")
             return False
     
     def add_documentation(self, content: str, metadata: Dict[str, Any]) -> bool:
@@ -299,126 +364,100 @@ class RAGManager:
             return False
     
     def search_sample_flows(self, query: str, use_case: str = None, complexity: str = None) -> List[Dict[str, Any]]:
-        """Search for relevant sample flows"""
+        """Search for sample flows based on a query and/or metadata filters."""
+        if not self.supabase_client:
+            logger.error("Supabase client not initialized")
+            return []
+
         try:
-            if not self.supabase_client:
-                logger.error("Supabase client not initialized")
-                return []
+            # If the query is empty, return all flows
+            if not query:
+                return self.supabase_client.table("sample_flows").select("*").execute().data
+
+            query_embedding = self.embeddings.embed_query(query)
             
-            # Build query
-            query_builder = self.supabase_client.table("sample_flows").select("*")
+            rpc_params = {
+                'query_embedding': query_embedding,
+                'match_threshold': 0.7,
+                'match_count': 5
+            }
             
-            # Add filters
+            results = self.supabase_client.rpc('match_sample_flows', rpc_params).execute().data
+            
+            # Additional filtering based on use_case or complexity if provided
             if use_case:
-                query_builder = query_builder.eq("use_case", use_case)
-            
+                results = [r for r in results if r.get('use_case') == use_case]
             if complexity:
-                query_builder = query_builder.eq("complexity_level", complexity)
-            
-            # Execute query
-            result = query_builder.execute()
-            
-            flows = result.data if result.data else []
-            
-            # If we have a text query, filter by relevance
-            if query and flows:
-                # Simple text matching for now - could be enhanced with vector search
-                filtered_flows = []
-                query_lower = query.lower()
+                results = [r for r in results if r.get('complexity_level') == complexity]
                 
-                for flow in flows:
-                    score = 0
-                    if query_lower in flow.get('flow_name', '').lower():
-                        score += 3
-                    if query_lower in flow.get('description', '').lower():
-                        score += 2
-                    if any(query_lower in tag.lower() for tag in flow.get('tags', [])):
-                        score += 1
-                    
-                    if score > 0:
-                        flow['relevance_score'] = score
-                        filtered_flows.append(flow)
-                
-                # Sort by relevance
-                flows = sorted(filtered_flows, key=lambda x: x['relevance_score'], reverse=True)
-            
-            logger.info(f"Found {len(flows)} relevant sample flows")
-            return flows
-            
+            logger.info(f"Found {len(results)} matching sample flows for query: '{query}'")
+            return results
         except Exception as e:
-            logger.error(f"Error searching sample flows: {str(e)}")
+            logger.error(f"Error searching for sample flows: {e}")
             return []
     
     def _extract_flow_description(self, xml_content: str) -> str:
-        """Extract description from flow XML"""
+        """Extracts the description from the flow's XML content."""
         try:
-            # Simple regex to find description - could be enhanced with proper XML parsing
-            import re
-            description_match = re.search(r'<description>(.*?)</description>', xml_content, re.DOTALL)
-            if description_match:
-                return description_match.group(1).strip()
-            return "No description available"
-        except:
-            return "No description available"
+            root = ET.fromstring(xml_content)
+            # Namespace is required to find elements in Salesforce metadata XML
+            namespace = {'sfdc': 'http://soap.sforce.com/2006/04/metadata'}
+            description_element = root.find('sfdc:description', namespace)
+            if description_element is not None and description_element.text:
+                return description_element.text.strip()
+        except ET.ParseError:
+            logger.warning("Could not parse XML to extract description.")
+        return "No description available."
     
     def _infer_use_case(self, filename: str, xml_content: str) -> str:
-        """Infer use case from filename and content"""
-        filename_lower = filename.lower()
+        """Infers the primary use case of a flow from its name and content."""
         content_lower = xml_content.lower()
-        
-        # Common use case patterns
-        if any(keyword in filename_lower or keyword in content_lower for keyword in ['approval', 'approve']):
-            return "approval_process"
-        elif any(keyword in filename_lower or keyword in content_lower for keyword in ['email', 'notification']):
-            return "email_automation"
-        elif any(keyword in filename_lower or keyword in content_lower for keyword in ['lead', 'conversion']):
-            return "lead_management"
-        elif any(keyword in filename_lower or keyword in content_lower for keyword in ['case', 'support']):
-            return "case_management"
-        elif any(keyword in filename_lower or keyword in content_lower for keyword in ['opportunity', 'sales']):
-            return "sales_process"
-        else:
-            return "general"
+        if "screen" in content_lower:
+            return "User Interaction"
+        if "recordcreate" in content_lower or "recorddelete" in content_lower or "recordupdate" in content_lower:
+            return "Data Management"
+        if "email" in content_lower:
+            return "Notification"
+        if "autolaunched" in filename.lower():
+            return "Automated Process"
+        return "General"
     
     def _assess_complexity(self, xml_content: str) -> str:
-        """Assess flow complexity based on content"""
+        """Assesses the complexity of a flow based on its element count."""
         try:
-            # Count elements to determine complexity
-            element_count = xml_content.count('<')
-            
-            if element_count < 50:
-                return "simple"
-            elif element_count < 150:
-                return "medium"
-            else:
-                return "complex"
-        except:
-            return "unknown"
+            root = ET.fromstring(xml_content)
+            # A simple proxy for complexity is the number of elements
+            num_elements = len(root.findall(".//*"))
+            if num_elements > 50:
+                return "Advanced"
+            if num_elements > 20:
+                return "Intermediate"
+            return "Beginner"
+        except ET.ParseError:
+            logger.warning("Could not parse XML to assess complexity.")
+            return "Unknown"
     
     def _extract_tags(self, xml_content: str) -> List[str]:
-        """Extract relevant tags from flow content"""
-        tags = []
-        content_lower = xml_content.lower()
-        
-        # Common flow element types
-        if 'recordcreate' in content_lower:
-            tags.append('record_creation')
-        if 'recordupdate' in content_lower:
-            tags.append('record_update')
-        if 'recorddelete' in content_lower:
-            tags.append('record_deletion')
-        if 'emailsimple' in content_lower or 'emailalert' in content_lower:
-            tags.append('email')
-        if 'decision' in content_lower:
-            tags.append('conditional_logic')
-        if 'loop' in content_lower:
-            tags.append('loops')
-        if 'subflow' in content_lower:
-            tags.append('subflows')
-        if 'screen' in content_lower:
-            tags.append('user_interaction')
-        
-        return tags
+        """Extracts a list of relevant tags from the flow's XML content."""
+        tags = set()
+        try:
+            root = ET.fromstring(xml_content)
+            namespace = {'sfdc': 'http://soap.sforce.com/2006/04/metadata'}
+            
+            # Add process type as a tag
+            process_type = root.find('sfdc:processType', namespace)
+            if process_type is not None and process_type.text:
+                tags.add(process_type.text.strip())
+
+            # Add key element types as tags
+            for element in root.findall(".//*"):
+                # The tag name is the local name (without namespace)
+                tag_name = element.tag.split('}')[-1]
+                if tag_name in ['actionCalls', 'apexPluginCalls', 'assignments', 'decisions', 'loops', 'screens', 'recordCreates', 'recordUpdates', 'recordDeletes']:
+                    tags.add(tag_name)
+        except ET.ParseError:
+            logger.warning("Could not parse XML to extract tags.")
+        return list(tags)
 
 
 # Initialize global RAG manager
@@ -463,42 +502,21 @@ def search_flow_knowledge_base(query: str, category: str = None, max_results: in
 @tool
 def find_similar_sample_flows(requirements: str, use_case: str = None, complexity: str = None) -> List[Dict[str, Any]]:
     """
-    Find sample flows that match the given requirements.
+    Finds sample Salesforce flows that are semantically similar to the given requirements.
     
+    This tool is useful for finding complete, working examples of flows that can be used
+    as a starting point or reference for building a new flow. It searches a curated
+
     Args:
-        requirements: Description of what the flow should accomplish
-        use_case: Optional use case filter (e.g., 'approval_process', 'email_automation')
-        complexity: Optional complexity filter ('simple', 'medium', 'complex')
-    
+        requirements: A natural language description of the flow's requirements.
+        use_case: (Optional) Filter by a specific use case (e.g., 'Record Creation', 'User Interaction').
+        complexity: (Optional) Filter by complexity level ('Beginner', 'Intermediate', 'Advanced').
+
     Returns:
-        List of relevant sample flows with metadata
+        A list of dictionaries, where each dictionary represents a similar sample flow,
+        including its name, description, and XML content.
     """
-    try:
-        flows = rag_manager.search_sample_flows(
-            query=requirements,
-            use_case=use_case,
-            complexity=complexity
-        )
-        
-        # Format results for the agent
-        results = []
-        for flow in flows[:5]:  # Limit to top 5 results
-            results.append({
-                "flow_name": flow.get("flow_name"),
-                "description": flow.get("description"),
-                "use_case": flow.get("use_case"),
-                "complexity_level": flow.get("complexity_level"),
-                "tags": flow.get("tags", []),
-                "github_url": flow.get("github_url"),
-                "xml_content": flow.get("flow_xml")[:1000] + "..." if len(flow.get("flow_xml", "")) > 1000 else flow.get("flow_xml"),  # Truncate for readability
-                "relevance_score": flow.get("relevance_score", 0)
-            })
-        
-        return results
-        
-    except Exception as e:
-        logger.error(f"Error in find_similar_sample_flows: {str(e)}")
-        return []
+    return rag_manager.search_sample_flows(query=requirements, use_case=use_case, complexity=complexity)
 
 @tool
 def add_flow_documentation(title: str, content: str, category: str, tags: List[str] = None) -> bool:

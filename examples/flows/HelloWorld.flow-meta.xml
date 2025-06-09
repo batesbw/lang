@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>58.0</apiVersion>
+    <description>A simple screen flow that displays a greeting to the user.</description>
+    <interviewLabel>Hello World Flow</interviewLabel>
+    <label>Hello World</label>
+    <processType>Flow</processType>
+    <screens>
+        <name>helloScreen</name>
+        <label>Hello Screen</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <allowBack>true</allowBack>
+        <allowFinish>true</allowFinish>
+        <allowPause>true</allowPause>
+        <fields>
+            <name>greetingText</name>
+            <fieldText>&lt;p&gt;Hello, World! This is a sample flow.&lt;/p&gt;</fieldText>
+            <fieldType>DisplayText</fieldType>
+        </fields>
+        <showFooter>true</showFooter>
+        <showHeader>true</showHeader>
+    </screens>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>helloScreen</targetReference>
+        </connector>
+    </start>
+    <status>Active</status>
+</Flow> 
