@@ -85,7 +85,6 @@ The Salesforce Agent Workforce now supports user stories and acceptance criteria
       "acceptance_criteria": [
         "Count of contacts should update immediately when creating contacts",
         "Count should be saved the Count_of_Contacts__c field on the Account",
-        "If there are no contacts associated with an account, the count should be 0",
         "Where a Contact has changed from one Account to another, both Account records should be updated",
         "Do not consider deleting contacts in this use case"
       ],

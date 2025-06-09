@@ -51,6 +51,11 @@ class AgentWorkforceState(TypedDict, total=False):
     max_build_deploy_retries: int  # Maximum allowed retries from environment
     test_deploy_retry_count: int  # Current retry attempt for test deployment cycle
     
+    # Test Class Regeneration Support
+    test_class_regeneration_retry: bool  # Flag indicating this is a test regeneration retry
+    previous_test_deploy_errors: Optional[List[Dict[str, Any]]]  # Previous deployment errors for learning
+    retry_context: Optional[Dict[str, Any]]  # Context and guidance for retry attempts
+    
     # Workflow Control Flags
     skip_test_design_deployment: bool  # Skip TestDesigner and Test Deployment phases, go directly to Flow Builder
     

@@ -122,11 +122,20 @@ def run_test_designer_agent(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     Executes the TestDesigner agent and updates the graph state with test design results.
     Expects 'current_test_designer_request' to be set in the input state.
+    
+    UPDATED: Now handles retry context for improved test generation after deployment failures.
     """
     print("--- Running TestDesigner Agent ---")
     
     # Debug logging
     print(f"DEBUG: Received state keys: {list(state.keys())}")
+    
+    # Check for retry context
+    retry_context = state.get("retry_context")
+    is_retry = retry_context is not None
+    if is_retry:
+        print(f"🔄 RETRY MODE: {retry_context.get('retry_type', 'unknown')}")
+        print(f"📋 Guidance: {retry_context.get('guidance', 'No specific guidance')}")
     
     test_designer_request_dict = state.get("current_test_designer_request")
     print(f"DEBUG: test_designer_request_dict = {test_designer_request_dict}")
@@ -159,8 +168,8 @@ def run_test_designer_agent(state: AgentWorkforceState) -> AgentWorkforceState:
         # OPTIMIZED APPROACH: Use direct LLM call instead of complex agent tool chain
         print("🧠 Generating intelligent test design with optimized LLM call...")
         
-        # Create test response using direct LLM generation
-        test_response = _generate_test_design_with_llm(test_request)
+        # Create test response using direct LLM generation with retry context
+        test_response = _generate_test_design_with_llm(test_request, retry_context)
         
         updated_state = state.copy()
         updated_state["current_test_designer_response"] = test_response.model_dump()
@@ -174,8 +183,9 @@ def run_test_designer_agent(state: AgentWorkforceState) -> AgentWorkforceState:
             print(f"🧪 Generated {len(test_response.apex_test_classes)} Apex test classes")
             print(f"📝 Generated {len(test_response.deployable_apex_code)} deployable code files")
         
-        # Clear the request after processing
+        # Clear the request and retry context after processing
         updated_state["current_test_designer_request"] = None
+        updated_state["retry_context"] = None  # Clear retry context
         
         return updated_state
 
@@ -198,18 +208,19 @@ def run_test_designer_agent(state: AgentWorkforceState) -> AgentWorkforceState:
         )
         updated_state["current_test_designer_response"] = error_response.model_dump()
         updated_state["current_test_designer_request"] = None
-        updated_state["deployable_apex_code"] = []
+        updated_state["retry_context"] = None  # Clear retry context on error
         return updated_state
 
-def _generate_test_design_with_llm(request: TestDesignerRequest) -> TestDesignerResponse:
+def _generate_test_design_with_llm(request: TestDesignerRequest, retry_context: Dict[str, Any] = None) -> TestDesignerResponse:
     """
     Generate test design using a direct, optimized LLM call that outputs valid Apex code only.
+    
+    UPDATED: Now incorporates retry context to improve generation after deployment failures.
     """
     
     try:
-        # Create a simplified prompt that outputs only Apex code
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert Salesforce Apex developer. Generate ONLY valid, complete, production-ready Apex test class code.
+        # Build dynamic system prompt based on retry context
+        base_system_prompt = """You are an expert Salesforce Apex developer. Generate ONLY valid, complete, production-ready Apex test class code.
 
 DO NOT include explanations, comments about the code structure, or any text outside the Apex class.
 DO NOT use markdown code blocks or any formatting.
@@ -235,7 +246,32 @@ TDD Testing Approach:
 - Test what SHOULD HAPPEN when records are created/updated/deleted
 - Verify field updates, calculations, related record changes
 - Test business logic outcomes, not Flow execution
-- Focus on the acceptance criteria and expected behavior"""),
+- Focus on the acceptance criteria and expected behavior"""
+
+        # Add retry-specific guidance
+        if retry_context:
+            retry_errors = retry_context.get("previous_errors", [])
+            if retry_errors:
+                error_analysis = _analyze_previous_errors(retry_errors)
+                base_system_prompt += f"""
+
+CRITICAL RETRY CONTEXT - FIX THESE ISSUES:
+{retry_context.get('guidance', '')}
+
+Previous deployment failed with these errors:
+{error_analysis}
+
+MANDATORY FIXES:
+1. Ensure ALL methods have complete bodies with proper closing braces
+2. Ensure ALL classes have proper closing braces
+3. Validate syntax before output - no missing semicolons, braces, or parentheses
+4. Use complete method signatures
+5. Include proper return statements where needed
+6. Ensure proper Apex syntax throughout"""
+
+        # Create a simplified prompt that outputs only Apex code
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", base_system_prompt),
             
             ("human", """Generate a complete Apex test class for this Salesforce Flow using TDD approach:
 
@@ -265,11 +301,21 @@ Generate ONLY the Apex test class code that tests the EXPECTED OUTCOMES - no exp
         )
         
         # Get LLM response
-        print("🔄 Generating TDD-focused Apex test class with LLM...")
+        if retry_context:
+            print("🔄 Generating IMPROVED Apex test class with error context...")
+        else:
+            print("🔄 Generating TDD-focused Apex test class with LLM...")
+        
         response = LLM.invoke(messages)
         
         # The response content should be pure Apex code
         apex_code = response.content.strip()
+        
+        # Basic validation of generated code
+        validation_result = _validate_apex_code_basic(apex_code)
+        if not validation_result["is_valid"]:
+            print(f"⚠️ Generated code failed basic validation: {validation_result['errors']}")
+            # Could attempt regeneration here, but for now we'll proceed with warning
         
         # Create basic test scenarios for metadata
         test_scenarios = [
@@ -303,13 +349,20 @@ Generate ONLY the Apex test class code that tests the EXPECTED OUTCOMES - no exp
         
         # Create apex test class metadata
         class_name = f"{request.flow_name.replace('_', '').replace(' ', '')}_Test"
+        if retry_context:
+            description = f"REGENERATED TDD test class for {request.flow_name} - fixed previous syntax errors"
+            best_practices = ["TDD outcome testing", "TestSetup data isolation", "Proper assertions", "No direct Flow invocation", "Syntax error fixes"]
+        else:
+            description = f"TDD test class for {request.flow_name} - tests expected outcomes"
+            best_practices = ["TDD outcome testing", "TestSetup data isolation", "Proper assertions", "No direct Flow invocation"]
+            
         apex_test_class = ApexTestClass(
             class_name=class_name,
-            description=f"TDD test class for {request.flow_name} - tests expected outcomes",
+            description=description,
             flow_name=request.flow_name,
             class_annotations=["@isTest"],
             expected_coverage_percentage=request.test_coverage_target,
-            best_practices_applied=["TDD outcome testing", "TestSetup data isolation", "Proper assertions", "No direct Flow invocation"]
+            best_practices_applied=best_practices
         )
         
         return TestDesignerResponse(
@@ -338,6 +391,61 @@ Generate ONLY the Apex test class code that tests the EXPECTED OUTCOMES - no exp
             request=request,
             error_message=f"LLM test generation failed: {str(e)}"
         )
+
+def _analyze_previous_errors(errors: list) -> str:
+    """
+    Analyze previous deployment errors to provide specific guidance for improvement.
+    """
+    if not errors:
+        return "No specific errors to analyze."
+    
+    error_analysis = []
+    for error in errors:
+        message = error.get("message", "Unknown error")
+        error_type = error.get("type", "Unknown")
+        file_name = error.get("file", "Unknown file")
+        
+        error_analysis.append(f"- {error_type} in {file_name}: {message}")
+    
+    return "\n".join(error_analysis)
+
+def _validate_apex_code_basic(apex_code: str) -> dict:
+    """
+    Basic validation of generated Apex code to catch common syntax errors.
+    Returns dict with is_valid (bool) and errors (list).
+    """
+    errors = []
+    
+    if not apex_code or not apex_code.strip():
+        errors.append("Empty or whitespace-only code")
+        return {"is_valid": False, "errors": errors}
+    
+    # Check for balanced braces
+    open_braces = apex_code.count('{')
+    close_braces = apex_code.count('}')
+    if open_braces != close_braces:
+        errors.append(f"Unbalanced braces: {open_braces} open, {close_braces} close")
+    
+    # Check for balanced parentheses
+    open_parens = apex_code.count('(')
+    close_parens = apex_code.count(')')
+    if open_parens != close_parens:
+        errors.append(f"Unbalanced parentheses: {open_parens} open, {close_parens} close")
+    
+    # Check for @isTest annotation
+    if '@isTest' not in apex_code and '@IsTest' not in apex_code:
+        errors.append("Missing @isTest annotation")
+    
+    # Check for class definition
+    if 'class ' not in apex_code:
+        errors.append("Missing class definition")
+    
+    # Check for method definitions (should have at least @TestSetup and test methods)
+    method_count = apex_code.lower().count('void ') + apex_code.lower().count('static ')
+    if method_count < 2:
+        errors.append("Insufficient number of methods (expected at least @TestSetup and test methods)")
+    
+    return {"is_valid": len(errors) == 0, "errors": errors}
 
 def _parse_llm_test_response(request: TestDesignerRequest, response_content: str) -> TestDesignerResponse:
     """

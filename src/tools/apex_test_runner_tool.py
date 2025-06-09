@@ -27,6 +27,7 @@ from src.schemas.test_executor_schemas import (
     TestExecutorRequest, TestExecutorResponse, TestResult, 
     CodeCoverageResult, TestRunSummary, TestExecutionStatus
 )
+from src.schemas.auth_schemas import SalesforceAuthResponse
 
 
 class ApexTestRunnerTool(BaseTool):
@@ -69,7 +70,7 @@ class ApexTestRunnerTool(BaseTool):
             # Step 1: Verify we have a valid Salesforce session
             self._verify_salesforce_session(request)
             
-            # Step 2: Try sfdx approach first, fall back to API if needed
+            # Step 2: Try dynamic CLI approach, fall back to API if needed
             test_results = self._execute_tests_with_fallback(request)
             
             # Step 3: Get code coverage
@@ -94,7 +95,19 @@ class ApexTestRunnerTool(BaseTool):
             return TestExecutorResponse(
                 request_id=request_id,
                 success=False,
-                request=None,  # We might not have a valid request object
+                request=TestExecutorRequest(
+                    request_id=request_id,
+                    salesforce_session=SalesforceAuthResponse(
+                        success=False,
+                        session_id="",
+                        instance_url="",
+                        user_id="unknown",
+                        org_id="unknown",
+                        auth_type_used="unknown"
+                    ),
+                    test_class_names=[],
+                    org_alias="unknown"
+                ),
                 error_message=error_msg,
                 execution_time_seconds=time.time() - start_time
             )
@@ -116,46 +129,100 @@ class ApexTestRunnerTool(BaseTool):
         print(f"✅ Valid Salesforce session found for instance: {sf_session.instance_url}")
 
     def _execute_tests_with_fallback(self, request: TestExecutorRequest) -> List[TestResult]:
-        """Execute tests using sfdx first, fall back to API if needed"""
-        print("🔄 Executing Apex tests with sfdx/API fallback...")
+        """Execute tests using dynamic CLI approach, fall back to API if needed"""
+        print("🔄 Executing Apex tests with dynamic CLI approach...")
         
-        # Try sfdx approach first (if we have a valid org alias and sfdx is available)
-        if self._is_sfdx_available() and request.org_alias and request.org_alias != "unknown":
+        # Try CLI approach first (either existing alias or access token)
+        if self._is_sfdx_available():
             try:
-                print(f"🚀 Attempting test execution with Salesforce CLI using org alias: {request.org_alias}")
-                return self._execute_tests_with_sfdx(request)
+                print(f"🚀 Attempting test execution with Salesforce CLI")
+                return self._execute_tests_with_cli_dynamic(request)
             except Exception as e:
-                print(f"⚠️ sfdx execution failed: {str(e)}")
+                print(f"⚠️ CLI execution failed: {str(e)}")
                 print("🔄 Falling back to Salesforce API approach...")
         else:
-            print("⚠️ sfdx not available or no valid org alias, using Salesforce API approach")
+            print("⚠️ sfdx not available, using Salesforce API approach")
         
         # Fall back to API approach
         return self._execute_tests_with_api(request)
-
-    def _is_sfdx_available(self) -> bool:
-        """Check if Salesforce CLI is available"""
+    
+    def _find_matching_cli_org(self, target_instance_url: str) -> Optional[str]:
+        """Find existing CLI org alias that matches the target instance URL"""
         try:
-            result = subprocess.run(['sf', '--version'], capture_output=True, text=True, timeout=10)
-            return result.returncode == 0
-        except:
-            try:
-                result = subprocess.run(['sfdx', '--version'], capture_output=True, text=True, timeout=10)
-                return result.returncode == 0
-            except:
-                return False
-
-    def _execute_tests_with_sfdx(self, request: TestExecutorRequest) -> List[TestResult]:
-        """Execute tests using Salesforce CLI (sf/sfdx command)"""
-        print("📋 Executing tests with Salesforce CLI...")
+            print("🔍 Checking for existing CLI org aliases...")
+            
+            # Run sf org list auth to get authenticated orgs
+            result = subprocess.run(
+                ['sf', 'org', 'list', 'auth', '--json'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                print(f"⚠️ Could not list CLI orgs: {result.stderr}")
+                return None
+            
+            # Parse the JSON output
+            orgs_data = json.loads(result.stdout)
+            orgs = orgs_data.get('result', [])
+            
+            # Normalize our target URL for comparison
+            target_url_normalized = target_instance_url.replace('https://', '').replace('http://', '').rstrip('/')
+            
+            print(f"🎯 Looking for orgs matching: {target_url_normalized}")
+            
+            for org in orgs:
+                org_url = org.get('instanceUrl', '')
+                org_alias = org.get('alias', '')
+                org_username = org.get('username', '')
+                
+                # Normalize org URL for comparison
+                org_url_normalized = org_url.replace('https://', '').replace('http://', '').rstrip('/')
+                
+                print(f"   📋 Found org: alias='{org_alias}', url='{org_url_normalized}'")
+                
+                if org_url_normalized == target_url_normalized:
+                    print(f"✅ Found matching CLI org: alias='{org_alias}', username='{org_username}'")
+                    return org_alias if org_alias else org_username
+            
+            print(f"⚠️ No matching CLI org found for {target_url_normalized}")
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Error checking CLI orgs: {e}")
+            return None
+    
+    def _execute_tests_with_cli_dynamic(self, request: TestExecutorRequest) -> List[TestResult]:
+        """Execute tests using CLI with dynamic org discovery"""
+        sf_session = request.salesforce_session
+        instance_url = sf_session.instance_url
         
-        # Build the test command using the original org alias
+        # Ensure instance URL has https://
+        if not instance_url.startswith('https://'):
+            instance_url = f"https://{instance_url}"
+        
+        # First, try to find an existing CLI org that matches our instance
+        cli_org_identifier = self._find_matching_cli_org(instance_url)
+        
+        if cli_org_identifier:
+            print(f"📋 Using existing CLI org: {cli_org_identifier}")
+            return self._execute_tests_with_cli_alias(request, cli_org_identifier)
+        else:
+            print(f"📋 No matching CLI org found, using access token method")
+            return self._execute_tests_with_access_token(request)
+    
+    def _execute_tests_with_cli_alias(self, request: TestExecutorRequest, org_identifier: str) -> List[TestResult]:
+        """Execute tests using existing CLI org alias/username"""
+        print(f"📋 Executing tests with CLI org: {org_identifier}")
+        
+        # Build the test command using the org identifier
         test_classes_arg = ",".join(request.test_class_names)
         
         # Try the newer 'sf' command first, fall back to 'sfdx'
         commands_to_try = [
-            ['sf', 'apex', 'run', 'test', '--tests', test_classes_arg, '--target-org', request.org_alias, '--code-coverage', '--result-format', 'json'],
-            ['sfdx', 'force:apex:test:run', '--tests', test_classes_arg, '--targetusername', request.org_alias, '--codecoverage', '--resultformat', 'json']
+            ['sf', 'apex', 'run', 'test', '--tests', test_classes_arg, '--target-org', org_identifier, '--code-coverage', '--result-format', 'json', '--synchronous', '--wait', '10'],
+            ['sfdx', 'force:apex:test:run', '--tests', test_classes_arg, '--target-org', org_identifier, '--code-coverage', '--result-format', 'json', '--synchronous', '--wait', '10']
         ]
         
         for cmd in commands_to_try:
@@ -169,54 +236,145 @@ class ApexTestRunnerTool(BaseTool):
                     timeout=request.timeout_minutes * 60
                 )
                 
-                if result.returncode == 0:
+                print(f"📊 Command result: return_code={result.returncode}")
+                if result.stdout:
+                    print(f"📄 stdout: {result.stdout[:500]}{'...' if len(result.stdout) > 500 else ''}")
+                if result.stderr:
+                    print(f"⚠️  stderr: {result.stderr}")
+                
+                # For CLI test execution, return code 100 means tests ran but some failed
+                # Return code 0 means tests ran and all passed
+                # Only other return codes are actual command failures
+                if result.returncode == 0 or result.returncode == 100:
                     # Parse the JSON output
-                    output_data = json.loads(result.stdout)
-                    return self._parse_sfdx_test_results(output_data)
+                    print(f"✅ CLI command executed successfully (tests ran with result code {result.returncode}), parsing results...")
+                    try:
+                        output_data = json.loads(result.stdout)
+                        return self._parse_sfdx_test_results(output_data)
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️ Could not parse JSON output: {e}")
+                        print(f"   Raw stdout: {result.stdout}")
+                        continue  # Try next command
                 else:
                     print(f"⚠️ Command failed with return code {result.returncode}")
-                    print(f"   stdout: {result.stdout}")
-                    print(f"   stderr: {result.stderr}")
-                    
+                    continue  # Try next command
+                
             except subprocess.TimeoutExpired:
                 raise Exception(f"Test execution timed out after {request.timeout_minutes} minutes")
             except json.JSONDecodeError as e:
                 print(f"⚠️ Could not parse JSON output: {e}")
+                print(f"   Raw stdout: {result.stdout}")
             except Exception as e:
                 print(f"⚠️ Command execution failed: {e}")
         
-        # If all sfdx commands failed, raise an exception to trigger API fallback
-        raise Exception("All sfdx command attempts failed")
+        # If all CLI commands failed, raise an exception to trigger next fallback
+        raise Exception("All CLI alias command attempts failed")
 
-    def _setup_temp_sfdx_auth(self, request: TestExecutorRequest, temp_org_alias: str):
-        """Set up temporary sfdx authentication using the session token"""
-        print(f"🔐 Setting up temporary sfdx authentication for alias: {temp_org_alias}")
+    def _execute_tests_with_access_token(self, request: TestExecutorRequest) -> List[TestResult]:
+        """Execute tests using Salesforce CLI with access token method (fallback)"""
+        print("📋 Executing tests with Salesforce CLI using access token...")
         
         sf_session = request.salesforce_session
         instance_url = sf_session.instance_url
+        access_token = sf_session.session_id  # In our case, session_id is the access token
+        
+        # Ensure instance URL has https://
         if not instance_url.startswith('https://'):
             instance_url = f"https://{instance_url}"
         
-        # Try to authenticate using session ID
-        # This is a simplified approach - in practice, sfdx prefers OAuth flows
+        print(f"🔧 Setting instance URL: {instance_url}")
+        print(f"🔑 Using access token: {access_token[:20]}...")
+        
+        # Set the org-instance-url configuration (globally for this execution)
+        config_cmd = ['sf', 'config', 'set', f'org-instance-url={instance_url}', '--global']
+        print(f"🔧 Running config command: {' '.join(config_cmd)}")
+        
         try:
-            # For now, skip the temp auth setup and rely on existing org configuration
-            # This is because setting up session-based auth in sfdx is complex
-            print("⚠️ Skipping temporary sfdx auth setup - relying on existing org configuration")
+            config_result = subprocess.run(
+                config_cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if config_result.returncode != 0:
+                print(f"⚠️ Config command failed: {config_result.stderr}")
+                raise Exception(f"Failed to set org-instance-url: {config_result.stderr}")
+            
+            print("✅ Successfully set org-instance-url")
             
         except Exception as e:
-            print(f"⚠️ Could not set up temporary sfdx auth: {e}")
-            raise Exception("sfdx authentication setup failed")
+            print(f"❌ Error setting configuration: {e}")
+            raise Exception(f"Configuration setup failed: {e}")
+        
+        # Build the test command using the access token as target-org
+        test_classes_arg = ",".join(request.test_class_names)
+        
+        # Escape the access token properly - it may contain special characters like !
+        escaped_access_token = access_token.replace('!', r'\!')
+        
+        # Try the newer 'sf' command first, fall back to 'sfdx'
+        commands_to_try = [
+            ['sf', 'apex', 'run', 'test', '--tests', test_classes_arg, '--target-org', escaped_access_token, '--code-coverage', '--result-format', 'json', '--synchronous', '--wait', '10'],
+            ['sfdx', 'force:apex:test:run', '--tests', test_classes_arg, '--target-org', escaped_access_token, '--code-coverage', '--result-format', 'json', '--synchronous', '--wait', '10']
+        ]
+        
+        for cmd in commands_to_try:
+            try:
+                print(f"🔧 Running command: {' '.join(cmd[:8])}... [access_token] {' '.join(cmd[9:])}")  # Hide the access token in logs
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=request.timeout_minutes * 60
+                )
+                
+                print(f"📊 Command result: return_code={result.returncode}")
+                if result.stdout:
+                    print(f"📄 stdout: {result.stdout[:500]}{'...' if len(result.stdout) > 500 else ''}")
+                if result.stderr:
+                    print(f"⚠️  stderr: {result.stderr}")
+                
+                # For CLI test execution, return code 100 means tests ran but some failed
+                # Return code 0 means tests ran and all passed
+                # Only other return codes are actual command failures
+                if result.returncode == 0 or result.returncode == 100:
+                    # Parse the JSON output
+                    print(f"✅ CLI command executed successfully (tests ran with result code {result.returncode}), parsing results...")
+                    try:
+                        output_data = json.loads(result.stdout)
+                        return self._parse_sfdx_test_results(output_data)
+                    except json.JSONDecodeError as e:
+                        print(f"⚠️ Could not parse JSON output: {e}")
+                        print(f"   Raw stdout: {result.stdout}")
+                        continue  # Try next command
+                else:
+                    print(f"⚠️ Command failed with return code {result.returncode}")
+                    continue  # Try next command
+                
+            except subprocess.TimeoutExpired:
+                raise Exception(f"Test execution timed out after {request.timeout_minutes} minutes")
+            except json.JSONDecodeError as e:
+                print(f"⚠️ Could not parse JSON output: {e}")
+                print(f"   Raw stdout: {result.stdout}")
+            except Exception as e:
+                print(f"⚠️ Command execution failed: {e}")
+        
+        # If all CLI commands failed, raise an exception to trigger API fallback
+        raise Exception("All CLI access token command attempts failed")
 
-    def _cleanup_temp_sfdx_auth(self, temp_org_alias: str):
-        """Clean up temporary sfdx authentication"""
+    def _is_sfdx_available(self) -> bool:
+        """Check if Salesforce CLI is available"""
         try:
-            # Clean up any temporary org alias
-            # For now, no cleanup needed since we're not actually creating temp orgs
-            pass
-        except Exception as e:
-            print(f"⚠️ Warning: Could not clean up temporary org alias {temp_org_alias}: {e}")
-            # Don't fail the entire operation for cleanup issues
+            result = subprocess.run(['sf', '--version'], capture_output=True, text=True, timeout=10)
+            return result.returncode == 0
+        except:
+            try:
+                result = subprocess.run(['sfdx', '--version'], capture_output=True, text=True, timeout=10)
+                return result.returncode == 0
+            except:
+                return False
 
     def _parse_sfdx_test_results(self, sfdx_output: Dict[str, Any]) -> List[TestResult]:
         """Parse sfdx test results into our TestResult format"""
@@ -224,25 +382,70 @@ class ApexTestRunnerTool(BaseTool):
         
         test_results = []
         
-        # Handle different sfdx output formats
+        # Handle CLI output format (different from legacy sfdx format)
         tests_data = sfdx_output.get('result', {}).get('tests', [])
         if not tests_data:
+            # Try legacy format
             tests_data = sfdx_output.get('tests', [])
         
-        for test_data in tests_data:
-            test_result = TestResult(
-                id=test_data.get('Id', f"sfdx_{len(test_results)}"),
-                method_name=test_data.get('MethodName', test_data.get('methodName', 'Unknown')),
-                class_name=test_data.get('ApexClass', {}).get('Name') if test_data.get('ApexClass') else test_data.get('className', 'Unknown'),
-                outcome=test_data.get('Outcome', test_data.get('outcome', 'Unknown')),
-                run_time=test_data.get('RunTime', test_data.get('runTime', 0)),
-                message=test_data.get('Message', test_data.get('message', '')),
-                stack_trace=test_data.get('StackTrace', test_data.get('stackTrace', '')),
-                full_name=f"{test_data.get('className', 'Unknown')}.{test_data.get('MethodName', test_data.get('methodName', 'Unknown'))}"
-            )
-            test_results.append(test_result)
+        print(f"📋 Found {len(tests_data)} test result records to parse")
         
-        print(f"✅ Parsed {len(test_results)} test results from sfdx output")
+        for i, test_data in enumerate(tests_data):
+            try:
+                # Extract class name - CLI uses ApexClass.Name
+                apex_class = test_data.get('ApexClass', {})
+                class_name = apex_class.get('Name') if apex_class else test_data.get('className', 'Unknown')
+                
+                # Extract method name - CLI uses MethodName
+                method_name = test_data.get('MethodName') or test_data.get('methodName', 'Unknown')
+                
+                # Extract other fields with proper mapping
+                outcome = test_data.get('Outcome') or test_data.get('outcome', 'Unknown')
+                message = test_data.get('Message') or test_data.get('message', '')
+                stack_trace = test_data.get('StackTrace') or test_data.get('stackTrace', '')
+                
+                # Handle runtime - CLI uses RunTime in milliseconds
+                runtime_ms = test_data.get('RunTime') or test_data.get('runTime', 0)
+                runtime_seconds = runtime_ms / 1000.0 if runtime_ms else 0.0
+                
+                # Create TestResult with our schema field names
+                test_result = TestResult(
+                    test_class_name=class_name,
+                    test_method_name=method_name,
+                    outcome=outcome,
+                    message=message if message else None,
+                    stack_trace=stack_trace if stack_trace else None,
+                    time=runtime_seconds if runtime_seconds > 0 else None
+                )
+                
+                test_results.append(test_result)
+                
+                # Log each test result as we process it
+                status_emoji = "✅" if outcome == "Pass" else "❌"
+                time_str = f" ({runtime_seconds:.2f}s)" if runtime_seconds > 0 else ""
+                print(f"   {status_emoji} {class_name}.{method_name}: {outcome}{time_str}")
+                
+                # Show error details for failed tests
+                if outcome != "Pass" and message:
+                    print(f"      💬 Message: {message}")
+                if outcome != "Pass" and stack_trace:
+                    # Show first line of stack trace
+                    first_stack_line = stack_trace.split('\n')[0] if stack_trace else ""
+                    if first_stack_line:
+                        print(f"      📋 Stack: {first_stack_line}")
+                        
+            except Exception as e:
+                print(f"⚠️ Error parsing test result {i}: {e}")
+                print(f"   Raw test data: {test_data}")
+                continue
+        
+        print(f"✅ Successfully parsed {len(test_results)} test results")
+        
+        # Summary of results
+        passed = len([r for r in test_results if r.outcome == "Pass"])
+        failed = len([r for r in test_results if r.outcome in ["Fail", "CompileFail"]])
+        print(f"📊 TEST SUMMARY: {passed} passed, {failed} failed")
+        
         return test_results
 
     def _execute_tests_with_api(self, request: TestExecutorRequest) -> List[TestResult]:
@@ -366,14 +569,17 @@ class ApexTestRunnerTool(BaseTool):
     def _poll_test_results(self, sf: Salesforce, test_run_id: str, timeout_minutes: int) -> List[TestResult]:
         """Poll for test execution completion and retrieve results"""
         print(f"⏳ Polling for test results (timeout: {timeout_minutes} minutes)...")
+        print(f"🔗 Test run ID: {test_run_id}")
         
         timeout_time = datetime.now() + timedelta(minutes=timeout_minutes)
         polling_interval = 10  # Poll every 10 seconds
+        poll_count = 0
         
         while datetime.now() < timeout_time:
             try:
+                poll_count += 1
                 # Query test run status
-                query = f"SELECT Id, Status, JobName, StartTime, EndTime FROM AsyncApexJob WHERE Id = '{test_run_id}'"
+                query = f"SELECT Id, Status, JobName, StartTime, EndTime, CompletedDate FROM AsyncApexJob WHERE Id = '{test_run_id}'"
                 job_result = sf.query(query)
                 
                 if job_result['totalSize'] == 0:
@@ -381,22 +587,49 @@ class ApexTestRunnerTool(BaseTool):
                 
                 job = job_result['records'][0]
                 status = job['Status']
+                start_time = job.get('StartTime')
+                completed_date = job.get('CompletedDate')
+                job_name = job.get('JobName', 'Unknown')
                 
-                print(f"📊 Test run status: {status}")
+                # Provide detailed polling status
+                print(f"📊 Poll #{poll_count}: Test run status: {status}")
+                if start_time:
+                    print(f"   ⏰ Started: {start_time}")
+                if completed_date:
+                    print(f"   ✅ Completed: {completed_date}")
+                print(f"   📋 Job: {job_name}")
                 
                 if status in ['Completed', 'Failed', 'Aborted']:
                     # Test execution completed, retrieve detailed results
+                    print(f"🎯 Test execution finished with status: {status}")
+                    if status == 'Completed':
+                        print("✅ Retrieving test results...")
+                    elif status == 'Failed':
+                        print("❌ Test run failed - retrieving available results...")
+                    elif status == 'Aborted':
+                        print("⚠️ Test run was aborted - retrieving partial results...")
+                    
                     return self._retrieve_test_results(sf, test_run_id)
                 
+                # Still running, provide progress info
+                if status == 'Processing':
+                    print(f"   🔄 Test execution in progress...")
+                elif status == 'Queued':
+                    print(f"   ⏳ Test execution queued, waiting for resources...")
+                elif status == 'Preparing':
+                    print(f"   🔧 Preparing test execution environment...")
+                
                 # Wait before next poll
+                print(f"   💤 Waiting {polling_interval} seconds before next poll...")
                 time.sleep(polling_interval)
                 
             except Exception as e:
-                print(f"⚠️ Error polling test results: {str(e)}")
+                print(f"⚠️ Error polling test results (attempt {poll_count}): {str(e)}")
+                print(f"   🔄 Retrying in {polling_interval} seconds...")
                 time.sleep(polling_interval)
         
         # Timeout reached
-        raise Exception(f"Test execution timed out after {timeout_minutes} minutes")
+        raise Exception(f"Test execution timed out after {timeout_minutes} minutes ({poll_count} polls)")
 
     def _retrieve_test_results(self, sf: Salesforce, test_run_id: str) -> List[TestResult]:
         """Retrieve detailed test results from Salesforce"""
@@ -406,26 +639,59 @@ class ApexTestRunnerTool(BaseTool):
             # Query individual test results
             query = f"""
                 SELECT Id, AsyncApexJobId, MethodName, Outcome, ApexClass.Name, 
-                       Message, StackTrace, TestTimestamp
+                       Message, StackTrace, TestTimestamp, RunTime
                 FROM ApexTestResult 
                 WHERE AsyncApexJobId = '{test_run_id}'
+                ORDER BY ApexClass.Name, MethodName
             """
             
             results = sf.query_all(query)
             test_results = []
             
+            print(f"📊 Processing {results['totalSize']} test result records...")
+            
             for record in results['records']:
+                # Parse runtime if available
+                runtime = record.get('RunTime')
+                test_time = None
+                if runtime:
+                    try:
+                        test_time = float(runtime) / 1000.0  # Convert milliseconds to seconds
+                    except (ValueError, TypeError):
+                        test_time = None
+                
                 test_result = TestResult(
                     test_class_name=record['ApexClass']['Name'],
                     test_method_name=record['MethodName'],
                     outcome=record['Outcome'],
                     message=record.get('Message'),
                     stack_trace=record.get('StackTrace'),
-                    time=None  # TestTimestamp format may need conversion
+                    time=test_time
                 )
                 test_results.append(test_result)
+                
+                # Log each test result as we process it
+                status_emoji = "✅" if test_result.outcome == "Pass" else "❌"
+                time_str = f" ({test_time:.2f}s)" if test_time else ""
+                print(f"   {status_emoji} {test_result.test_class_name}.{test_result.test_method_name}: {test_result.outcome}{time_str}")
+                
+                # Show error details for failed tests
+                if test_result.outcome != "Pass" and test_result.message:
+                    print(f"      💬 Message: {test_result.message}")
+                if test_result.outcome != "Pass" and test_result.stack_trace:
+                    # Show first few lines of stack trace
+                    stack_lines = test_result.stack_trace.split('\n')[:3]
+                    for line in stack_lines:
+                        if line.strip():
+                            print(f"      📋 {line.strip()}")
             
-            print(f"📊 Retrieved {len(test_results)} test results")
+            print(f"✅ Retrieved {len(test_results)} test results")
+            
+            # Summary of results
+            passed = len([r for r in test_results if r.outcome == "Pass"])
+            failed = len([r for r in test_results if r.outcome in ["Fail", "CompileFail"]])
+            print(f"📊 TEST SUMMARY: {passed} passed, {failed} failed")
+            
             return test_results
             
         except Exception as e:

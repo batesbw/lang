@@ -1121,8 +1121,19 @@ def prepare_test_designer_request(state: AgentWorkforceState) -> AgentWorkforceS
     """
     Node to prepare TestDesigner request in the TDD approach.
     This runs BEFORE any Flow is built or deployed - tests are designed from user story requirements.
+    
+    UPDATED: Now handles retry scenarios with error context for improved test generation.
     """
     print("\n=== PREPARING TEST DESIGNER REQUEST ===")
+    
+    # Check if this is a retry/regeneration attempt
+    is_regeneration_retry = state.get("test_class_regeneration_retry", False)
+    previous_deploy_errors = state.get("previous_test_deploy_errors", [])
+    
+    if is_regeneration_retry:
+        print("🔄 This is a test class regeneration retry")
+        if previous_deploy_errors:
+            print(f"📋 Previous deployment had {len(previous_deploy_errors)} errors to learn from")
     
     # In TDD approach, we only need user story and authentication info
     user_story_dict = state.get("user_story")
@@ -1204,6 +1215,19 @@ def prepare_test_designer_request(state: AgentWorkforceState) -> AgentWorkforceS
         
         updated_state = state.copy()
         updated_state["current_test_designer_request"] = test_designer_request.model_dump()
+        
+        # IMPORTANT: Clear retry flags and pass error context to TestDesigner
+        if is_regeneration_retry:
+            updated_state["test_class_regeneration_retry"] = False  # Clear the retry flag
+            # Pass previous errors to TestDesigner for improved generation
+            if previous_deploy_errors:
+                updated_state["retry_context"] = {
+                    "previous_errors": previous_deploy_errors,
+                    "retry_type": "test_regeneration",
+                    "guidance": "Previous test classes had syntax errors. Generate complete, valid Apex code."
+                }
+            # Clear previous error state
+            updated_state["previous_test_deploy_errors"] = None
         
         print(f"✅ Prepared comprehensive TestDesigner request for TDD:")
         print(f"   Flow: {test_designer_request.flow_name}")
@@ -1600,6 +1624,10 @@ def record_test_deploy_cycle(state: AgentWorkforceState) -> AgentWorkforceState:
 def prepare_retry_test_deployment_request(state: AgentWorkforceState) -> AgentWorkforceState:
     """
     Node to prepare for a retry attempt after test deployment failure.
+    
+    UPDATED: Now analyzes deployment errors and decides whether to:
+    1. Regenerate test classes (for syntax/code errors) - goes back to TestDesigner
+    2. Just retry deployment (for environment/permission issues) - retries deployment
     """
     print("\n=== PREPARING RETRY TEST DEPLOYMENT REQUEST ===")
     
@@ -1614,19 +1642,29 @@ def prepare_retry_test_deployment_request(state: AgentWorkforceState) -> AgentWo
             current_retry_count = state.get("test_deploy_retry_count", 0)
             print(f"🔄 Setting up test deployment retry #{current_retry_count} for test classes")
             
-            # For now, we'll just retry with the same test classes
-            # Future enhancement: could modify test classes based on deployment errors
-            
-            # The prepare_test_class_deployment_request function will be called again
-            # to recreate the deployment request
+            # ANALYZE DEPLOYMENT ERRORS to decide retry strategy
+            component_errors = test_deployment_response.get("component_errors", [])
+            should_regenerate_tests = _should_regenerate_test_classes(component_errors)
             
             updated_state = state.copy()
-            # Clear the failed deployment response to trigger fresh preparation
-            updated_state["current_test_deployment_request"] = None
             
-            print(f"✅ Prepared for test deployment retry #{current_retry_count}")
-            
-            return updated_state
+            if should_regenerate_tests:
+                print("🔄 Syntax/code errors detected - will regenerate test classes with TestDesigner")
+                # Clear both the test designer response AND deployment request to force full regeneration
+                updated_state["current_test_designer_response"] = None
+                updated_state["current_test_deployment_request"] = None
+                # Set a flag to indicate this is a regeneration retry
+                updated_state["test_class_regeneration_retry"] = True
+                # Pass error context to TestDesigner for improved generation
+                updated_state["previous_test_deploy_errors"] = component_errors
+                print(f"✅ Prepared for test class regeneration retry #{current_retry_count}")
+                return updated_state
+            else:
+                print("🔄 Environment/permission errors detected - will retry deployment only")
+                # Clear only the deployment request to retry deployment with same test classes
+                updated_state["current_test_deployment_request"] = None
+                print(f"✅ Prepared for test deployment retry #{current_retry_count}")
+                return updated_state
             
         except Exception as e:
             print(f"Error preparing test deployment retry: {e}")
@@ -1634,6 +1672,51 @@ def prepare_retry_test_deployment_request(state: AgentWorkforceState) -> AgentWo
     else:
         print("Cannot prepare test deployment retry - missing required data")
         return state
+
+
+def _should_regenerate_test_classes(component_errors: list) -> bool:
+    """
+    Analyze component errors to determine if test classes should be regenerated.
+    
+    Returns True if errors indicate code/syntax issues that require regenerating test classes.
+    Returns False if errors are environmental (permissions, org limits, etc.)
+    """
+    if not component_errors:
+        return False
+    
+    # Keywords that indicate code/syntax errors requiring test regeneration
+    code_error_keywords = [
+        "expecting", "syntax", "unexpected", "missing", "invalid syntax",
+        "method must have a body", "unexpected token", "unclosed", 
+        "invalid identifier", "compilation", "parse error",
+        "malformed", "EOF", "brace", "bracket", "semicolon"
+    ]
+    
+    # Keywords that indicate environmental errors (just retry deployment)
+    env_error_keywords = [
+        "permission", "access", "unauthorized", "limit", "quota",
+        "network", "timeout", "unavailable", "maintenance"
+    ]
+    
+    regenerate_count = 0
+    env_count = 0
+    
+    for error in component_errors:
+        error_message = error.get("message", "").lower()
+        
+        # Check for code errors
+        if any(keyword in error_message for keyword in code_error_keywords):
+            regenerate_count += 1
+        # Check for environmental errors  
+        elif any(keyword in error_message for keyword in env_error_keywords):
+            env_count += 1
+        else:
+            # Unknown errors - default to regeneration for safety
+            regenerate_count += 1
+    
+    # If majority are code errors, regenerate. If majority are env errors, just retry.
+    print(f"Error analysis: {regenerate_count} code errors, {env_count} environment errors")
+    return regenerate_count >= env_count
 
 
 def create_workflow() -> StateGraph:
@@ -1718,8 +1801,15 @@ def create_workflow() -> StateGraph:
         }
     )
     
-    # Test deployment retry loop
-    workflow.add_edge("prepare_retry_test_deployment_request", "prepare_test_deployment_request")
+    # Test deployment retry loop - UPDATED to be conditional
+    workflow.add_conditional_edges(
+        "prepare_retry_test_deployment_request",
+        should_continue_after_test_retry_preparation,
+        {
+            "regenerate_tests": "prepare_test_designer_request",  # Go back to TestDesigner for regeneration
+            "retry_deployment": "prepare_test_deployment_request",  # Just retry deployment
+        }
+    )
     
     # 4. Flow Builder workflow (happens after test deployment)
     workflow.add_edge("prepare_flow_request", "flow_builder")
@@ -2070,6 +2160,25 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
         print("   You can now run the tests to verify the Flow works as expected.")
     
     print("-" * 50)
+
+
+def should_continue_after_test_retry_preparation(state: AgentWorkforceState) -> str:
+    """
+    Conditional edge function to determine test deployment retry strategy.
+    
+    Returns:
+    - "regenerate_tests": Go back to TestDesigner to generate new test classes
+    - "retry_deployment": Retry deployment with existing test classes
+    """
+    # Check if test class regeneration was requested
+    test_regeneration_retry = state.get("test_class_regeneration_retry", False)
+    
+    if test_regeneration_retry:
+        print("🔄 Routing to TestDesigner for test class regeneration")
+        return "regenerate_tests"
+    else:
+        print("🔄 Routing to test deployment retry with existing classes")
+        return "retry_deployment"
 
 
 if __name__ == "__main__":
