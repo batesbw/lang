@@ -94,7 +94,8 @@ The Salesforce Agent Workforce now supports user stories and acceptance criteria
     },
     "is_authenticated": false,
     "retry_count": 0,
-    "messages": []
+    "messages": [],
+    "skip_test_design_deployment": true
   }
 ```
 

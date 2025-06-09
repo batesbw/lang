@@ -133,11 +133,18 @@ def web_search_node(state: AgentWorkforceState) -> AgentWorkforceState:
 def should_continue_after_auth(state: AgentWorkforceState) -> str:
     """
     Conditional edge function to determine if we should continue after authentication.
-    Updated for TDD approach: go to TestDesigner first.
+    Updated to support skip_test_design_deployment flag for direct flow building.
     """
     if state.get("is_authenticated", False):
-        print("Authentication successful, proceeding to TestDesigner (TDD approach).")
-        return "test_designer"
+        # Check if user wants to skip test design/deployment and go directly to flow building
+        skip_tests = state.get("skip_test_design_deployment", False)
+        
+        if skip_tests:
+            print("Authentication successful, skipping test design/deployment and proceeding directly to Flow Builder.")
+            return "flow_builder"
+        else:
+            print("Authentication successful, proceeding to TestDesigner (TDD approach).")
+            return "test_designer"
     else:
         print("Authentication failed, ending workflow.")
         return END
@@ -194,13 +201,9 @@ def should_continue_after_deployment(state: AgentWorkforceState) -> str:
         if build_deploy_retry_count < max_retries:
             print(f"🔄 Retrying build/deploy cycle ({build_deploy_retry_count + 1}/{max_retries})")
             
-            # Use web search if available, otherwise go directly to retry
-            if WEB_SEARCH_AVAILABLE:
-                print("🔍 Will search for solutions to this deployment error")
-                return "search_for_solutions"
-            else:
-                print("🔄 Retrying Flow build without web search")
-                return "direct_retry"
+            # FIXED: Always use direct retry - web search is disabled
+            print("🔄 Retrying Flow build directly (web search disabled)")
+            return "direct_retry"
         else:
             print("❌ Flow deployment failed after max retries, ending workflow.")
             return END
@@ -1494,12 +1497,13 @@ def create_workflow() -> StateGraph:
     
     # === TDD WORKFLOW EDGES ===
     
-    # 1. Authentication → TestDesigner (TDD approach)
+    # 1. Authentication → TestDesigner (TDD approach) OR Flow Builder (skip tests)
     workflow.add_conditional_edges(
         "authentication",
         should_continue_after_auth,
         {
             "test_designer": "prepare_test_designer_request",
+            "flow_builder": "prepare_flow_request",  # Direct path when skipping tests
             END: END
         }
     )
@@ -1652,7 +1656,9 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         "build_deploy_retry_count": 0,
         "max_build_deploy_retries": MAX_BUILD_DEPLOY_RETRIES,
         # Test deployment retry fields
-        "test_deploy_retry_count": 0
+        "test_deploy_retry_count": 0,
+        # Workflow control flags
+        "skip_test_design_deployment": False  # Default to full TDD workflow
     }
     
     # Create and compile the workflow
@@ -1750,7 +1756,11 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     
     # TestDesigner status (runs first in TDD)
     test_designer_response_dict = final_state.get("current_test_designer_response")
-    if test_designer_response_dict:
+    skip_tests = final_state.get("skip_test_design_deployment", False)
+    
+    if skip_tests:
+        print("⏭️  2a. TestDesigner: SKIPPED (by user request)")
+    elif test_designer_response_dict:
         try:
             test_designer_response = TestDesignerResponse(**test_designer_response_dict)
             if test_designer_response.success:
@@ -1769,7 +1779,10 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     
     # Test Class Deployment status (runs second in TDD)
     test_deployment_response_dict = final_state.get("current_test_deployment_response")
-    if test_deployment_response_dict:
+    
+    if skip_tests:
+        print("⏭️  2b. Test Class Deployment: SKIPPED (by user request)")
+    elif test_deployment_response_dict:
         try:
             test_deployment_response = DeploymentResponse(**test_deployment_response_dict)
             if test_deployment_response.success:

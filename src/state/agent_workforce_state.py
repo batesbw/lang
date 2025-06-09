@@ -44,6 +44,9 @@ class AgentWorkforceState(TypedDict, total=False):
     max_build_deploy_retries: int  # Maximum allowed retries from environment
     test_deploy_retry_count: int  # Current retry attempt for test deployment cycle
     
+    # Workflow Control Flags
+    skip_test_design_deployment: bool  # Skip TestDesigner and Test Deployment phases, go directly to Flow Builder
+    
     # General state
     messages: Optional[List[Any]]  # For storing LangGraph message history
     error_message: Optional[str]
