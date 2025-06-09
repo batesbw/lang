@@ -165,15 +165,15 @@ def should_continue_after_flow_build(state: AgentWorkforceState) -> str:
 def should_continue_after_deployment(state: AgentWorkforceState) -> str:
     """
     Conditional edge function to determine workflow continuation after Flow deployment.
-    Updated for TDD approach: after successful deployment, we're done (tests already exist).
+    Updated for correct TDD approach: after successful deployment, execute tests to verify the Flow works.
     """
     deployment_response = state.get("current_deployment_response")
     build_deploy_retry_count = state.get("build_deploy_retry_count", 0)
     max_retries = state.get("max_build_deploy_retries", MAX_BUILD_DEPLOY_RETRIES)
     
     if deployment_response and deployment_response.get("success"):
-        print("✅ Flow deployment successful! TDD cycle complete - tests and Flow are both deployed.")
-        return END
+        print("✅ Flow deployment successful! Now executing tests to verify Flow implementation...")
+        return "execute_tests"  # NEW: execute tests after successful deployment
     else:
         print(f"❌ Flow deployment failed (attempt #{build_deploy_retry_count + 1})")
         
@@ -1517,7 +1517,8 @@ def should_continue_after_test_designer(state: AgentWorkforceState) -> str:
 def should_continue_after_test_deployment(state: AgentWorkforceState) -> str:
     """
     Conditional edge function to determine workflow continuation after test class deployment.
-    If test deployment succeeds, we proceed to Flow Builder (TDD: tests first, then Flow).
+    In the updated workflow: Test deployment → Flow Builder → Flow Deployment → TestExecutor
+    If test deployment succeeds, we proceed to Flow Builder.
     If test deployment fails, we retry (with limits).
     """
     test_deployment_response = state.get("current_test_deployment_response")
@@ -1525,8 +1526,8 @@ def should_continue_after_test_deployment(state: AgentWorkforceState) -> str:
     max_retries = 3  # Hardcoded for test deployment retries
     
     if test_deployment_response and test_deployment_response.get("success"):
-        print("✅ Test class deployment successful! Proceeding to execute tests...")
-        return "execute_tests"
+        print("✅ Test class deployment successful! Proceeding to Flow Builder...")
+        return "flow_builder"  # UPDATED: go to Flow Builder instead of execute_tests
     else:
         print(f"❌ Test class deployment failed (attempt #{test_deploy_retry_count + 1})")
         
@@ -1543,30 +1544,37 @@ def should_continue_after_test_execution(state: AgentWorkforceState) -> str:
     """
     Conditional edge function to determine workflow continuation after test execution.
     
-    The TestExecutor runs the deployed tests and analyzes the results.
-    Since this is TDD, we expect the tests to fail initially (they're testing 
-    Flow functionality that doesn't exist yet).
+    The TestExecutor runs after successful Flow deployment to verify the Flow works correctly.
+    Test results show if the implemented Flow meets the requirements.
     
     After test execution:
-    - Always proceed to Flow Builder to create the Flow that will make tests pass
-    - Test results provide guidance for what the Flow should do
+    - If tests pass: workflow complete (TDD cycle successful)
+    - If tests fail: could retry flow building (future enhancement)
     """
     test_executor_response = state.get("current_test_executor_response")
     
     if test_executor_response and test_executor_response.get("success") is not None:
         # Test execution completed (whether tests passed or failed)
-        test_summary = test_executor_response.get("test_run_summary", {})
+        test_summary = test_executor_response.get("test_run_summary")
+        
+        # Handle case where test_summary might be None
+        if test_summary is None:
+            print("⚠️ Test execution completed but no test summary available")
+            return END
+        
         failures = test_summary.get("failures", 0)
         successes = test_summary.get("successes", 0)
         
         print(f"📊 Test Execution Complete: {successes} passed, {failures} failed")
         
         if failures > 0:
-            print("🔴 Tests failed (expected in TDD) - proceeding to Flow Builder to make them pass")
+            print("🔴 Tests failed - Flow may need adjustments (ending workflow for now)")
         else:
-            print("🟢 Tests passed - proceeding to Flow Builder for completion")
+            print("🟢 Tests passed - Flow implementation verified successfully!")
         
-        return "flow_builder"
+        # For now, always end after test execution
+        # Future enhancement: could retry flow building if tests fail
+        return END
     else:
         print("❌ Test execution failed to complete properly. Ending workflow.")
         return END
@@ -1631,7 +1639,9 @@ def prepare_retry_test_deployment_request(state: AgentWorkforceState) -> AgentWo
 def create_workflow() -> StateGraph:
     """
     Creates and configures the LangGraph workflow with Test-Driven Development approach.
-    New flow: Authentication → TestDesigner → Test Deployment → TestExecutor → Flow Builder → Flow Deployment → Retry Loop
+    UPDATED flow: Authentication → TestDesigner → Test Deployment → Flow Builder → Flow Deployment → TestExecutor
+    
+    Key change: TestExecutor now runs ONLY after successful Flow deployment to verify implementation.
     """
     # Create the state graph
     workflow = StateGraph(AgentWorkforceState)
@@ -1702,7 +1712,7 @@ def create_workflow() -> StateGraph:
         "record_test_cycle",
         should_continue_after_test_deployment,
         {
-            "execute_tests": "prepare_test_executor_request",  # New: go to test execution
+            "flow_builder": "prepare_flow_request",  # Modified: go directly to flow builder after test deployment
             "retry_test_deployment": "prepare_retry_test_deployment_request",
             END: END
         }
@@ -1711,19 +1721,7 @@ def create_workflow() -> StateGraph:
     # Test deployment retry loop
     workflow.add_edge("prepare_retry_test_deployment_request", "prepare_test_deployment_request")
     
-    # 4. TestExecutor workflow (NEW)
-    workflow.add_edge("prepare_test_executor_request", "test_executor")
-    
-    workflow.add_conditional_edges(
-        "test_executor",
-        should_continue_after_test_execution,
-        {
-            "flow_builder": "prepare_flow_request",  # TDD: test execution → Flow Builder
-            END: END
-        }
-    )
-    
-    # 5. Flow Builder workflow (happens after test execution)
+    # 4. Flow Builder workflow (happens after test deployment)
     workflow.add_edge("prepare_flow_request", "flow_builder")
     
     workflow.add_conditional_edges(
@@ -1735,48 +1733,29 @@ def create_workflow() -> StateGraph:
         }
     )
     
-    # 6. Flow deployment workflow
+    # 5. Flow deployment workflow
     workflow.add_edge("prepare_deployment_request", "deployment")
     workflow.add_edge("deployment", "record_cycle")
     
-    # Flow deployment retry logic
-    # NOTE: Web search functionality temporarily disabled - using direct retry only
-    # if WEB_SEARCH_AVAILABLE:
-    #     # With web search: deployment failures → search for solutions → retry
-    #     # Successful deployment → END (TDD complete)
-    #     workflow.add_conditional_edges(
-    #         "record_cycle",
-    #         should_continue_after_deployment,
-    #         {
-    #             "search_for_solutions": "prepare_web_search_request",
-    #             "direct_retry": "prepare_retry_flow_request",
-    #             END: END
-    #         }
-    #     )
-    #     
-    #     # Web search flow: prepare search → execute search → prepare retry
-    #     workflow.add_edge("prepare_web_search_request", "web_search")
-    #     workflow.add_edge("web_search", "prepare_retry_flow_request")
-    # else:
-    #     # Without web search: deployment failures → direct retry
-    #     # Successful deployment → END (TDD complete)
-    #     workflow.add_conditional_edges(
-    #         "record_cycle",
-    #         should_continue_after_deployment,
-    #         {
-    #             "direct_retry": "prepare_retry_flow_request",
-    #             END: END
-    #         }
-    #     )
-    
-    # Without web search: deployment failures → direct retry
-    # Successful deployment → END (TDD complete)
+    # Flow deployment retry logic - UPDATED to include TestExecutor after successful deployment
     workflow.add_conditional_edges(
         "record_cycle",
         should_continue_after_deployment,
         {
+            "execute_tests": "prepare_test_executor_request",  # NEW: execute tests after successful flow deployment
             "direct_retry": "prepare_retry_flow_request",
             END: END
+        }
+    )
+    
+    # 6. TestExecutor workflow (runs ONLY after successful Flow deployment)
+    workflow.add_edge("prepare_test_executor_request", "test_executor")
+    
+    workflow.add_conditional_edges(
+        "test_executor",
+        should_continue_after_test_execution,
+        {
+            END: END  # TestExecutor is the final step - always end after test execution
         }
     )
     
@@ -1790,14 +1769,16 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
     """
     Runs the complete Test-Driven Development workflow for the given Salesforce org alias.
     
-    TDD Workflow Order:
+    UPDATED TDD Workflow Order:
     1. Authentication
     2. TestDesigner (analyzes requirements and creates test scenarios)
     3. Test Class Deployment (deploys Apex test classes)
-    4. TestExecutor (executes deployed tests and analyzes results)
-    5. Flow Builder (builds Flow to make tests pass)
-    6. Flow Deployment (deploys the Flow)
+    4. Flow Builder (builds Flow to meet test requirements)
+    5. Flow Deployment (deploys the Flow)
+    6. TestExecutor (executes tests ONLY after successful Flow deployment)
     7. Retry loops for any failures
+    
+    Key change: Tests are executed AFTER Flow deployment to verify implementation works correctly.
     
     Args:
         org_alias: The Salesforce org alias to authenticate to
@@ -1807,7 +1788,7 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         Final state of the workflow
     """
     print(f"\n🚀 Starting Salesforce Agent Workforce (TDD Approach) for org: {org_alias}")
-    print(f"🧪 Test-Driven Development Flow: TestDesigner → Test Deployment → TestExecutor → Flow Builder → Flow Deployment")
+    print(f"🧪 UPDATED TDD Flow: TestDesigner → Test Deployment → Flow Builder → Flow Deployment → TestExecutor")
     print(f"🔄 Retry configuration: max_retries={MAX_BUILD_DEPLOY_RETRIES}")
     print("=" * 80)
     

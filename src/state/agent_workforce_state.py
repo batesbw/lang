@@ -35,6 +35,13 @@ class AgentWorkforceState(TypedDict, total=False):
     current_test_deployment_request: Optional[Dict[str, Any]]  # Serialized DeploymentRequest for test classes
     current_test_deployment_response: Optional[Dict[str, Any]]  # Serialized DeploymentResponse for test classes
     
+    # TestExecutor related state
+    current_test_executor_request: Optional[Dict[str, Any]]  # Serialized TestExecutorRequest
+    current_test_executor_response: Optional[Dict[str, Any]]  # Serialized TestExecutorResponse
+    test_execution_results: Optional[List[Dict[str, Any]]]  # Serialized TestResult objects
+    code_coverage_results: Optional[List[Dict[str, Any]]]  # Serialized CodeCoverageResult objects
+    test_execution_summary: Optional[Dict[str, Any]]  # Serialized TestRunSummary
+    
     # Web Search related state
     current_web_search_request: Optional[Dict[str, Any]]  # Serialized WebSearchAgentRequest
     current_web_search_response: Optional[Dict[str, Any]]  # Serialized WebSearchAgentResponse
