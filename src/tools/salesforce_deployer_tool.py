@@ -135,15 +135,36 @@ class SalesforceDeployerTool(BaseTool):
                 directory = config["directory"]
                 file_extension = config["file_extension"]
                 
-                # Construct the file path within the zip
-                file_path = f"{directory}/{component.api_name}.{file_extension}"
-                zf.writestr(file_path, component.metadata_xml)
+                # Special handling for ApexClass components
+                if component.component_type == "ApexClass":
+                    # Create the .cls file with the Apex code
+                    cls_file_path = f"{directory}/{component.api_name}.cls"
+                    zf.writestr(cls_file_path, component.metadata_xml)
+                    
+                    # Create the .cls-meta.xml file with metadata
+                    meta_xml_content = self._create_apex_class_metadata_xml(component.api_name, "59.0")
+                    meta_file_path = f"{directory}/{component.api_name}.cls-meta.xml"
+                    zf.writestr(meta_file_path, meta_xml_content)
+                else:
+                    # Standard handling for other component types
+                    file_path = f"{directory}/{component.api_name}.{file_extension}"
+                    zf.writestr(file_path, component.metadata_xml)
             
             # Add package.xml
             zf.writestr("package.xml", package_xml)
         
         zip_buffer.seek(0)
         return zip_buffer.read()
+    
+    def _create_apex_class_metadata_xml(self, class_name: str, api_version: str = "59.0") -> str:
+        """
+        Create the metadata XML for an Apex class.
+        """
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+<ApexClass xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>{api_version}</apiVersion>
+    <status>Active</status>
+</ApexClass>"""
 
     def _run(self, request: DeploymentRequest) -> DeploymentResponse:
         """

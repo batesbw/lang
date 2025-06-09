@@ -20,11 +20,13 @@ from src.agents.enhanced_flow_builder_agent import run_enhanced_flow_builder_age
 from src.agents.deployment_agent import run_deployment_agent
 from src.agents.web_search_agent import run_web_search_agent
 from src.agents.test_designer_agent import run_test_designer_agent
+from src.agents.test_executor_agent import run_test_executor_agent
 from src.schemas.auth_schemas import AuthenticationRequest, SalesforceAuthResponse
 from src.schemas.flow_builder_schemas import FlowBuildRequest, FlowBuildResponse
 from src.schemas.deployment_schemas import DeploymentRequest, DeploymentResponse
 from src.schemas.web_search_schemas import WebSearchRequest, WebSearchAgentRequest, WebSearchAgentResponse, SearchDepth
 from src.schemas.test_designer_schemas import TestDesignerRequest, TestDesignerResponse
+from src.schemas.test_executor_schemas import TestExecutorRequest, TestExecutorResponse
 from src.config import get_llm, get_all_agent_configs
 
 # Load environment variables
@@ -1089,10 +1091,30 @@ def prepare_deployment_request(state: AgentWorkforceState) -> AgentWorkforceStat
 
 def test_designer_node(state: AgentWorkforceState) -> AgentWorkforceState:
     """
-    LangGraph node for running the TestDesigner agent.
+    LangGraph node for the TestDesigner Agent.
     """
-    print("--- Executing TestDesigner Agent Node ---")
-    return run_test_designer_agent(state)
+    print("\n=== TEST DESIGNER NODE ===")
+    try:
+        return run_test_designer_agent(state)
+    except Exception as e:
+        print(f"Error in test_designer_node: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Designer Node Error: {str(e)}"
+        return updated_state
+
+
+def test_executor_node(state: AgentWorkforceState) -> AgentWorkforceState:
+    """
+    LangGraph node for the TestExecutor Agent.
+    """
+    print("\n=== TEST EXECUTOR NODE ===")
+    try:
+        return run_test_executor_agent(state)
+    except Exception as e:
+        print(f"Error in test_executor_node: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Executor Node Error: {str(e)}"
+        return updated_state
 
 
 def prepare_test_designer_request(state: AgentWorkforceState) -> AgentWorkforceState:
@@ -1203,82 +1225,197 @@ def prepare_test_designer_request(state: AgentWorkforceState) -> AgentWorkforceS
 
 def prepare_test_class_deployment_request(state: AgentWorkforceState) -> AgentWorkforceState:
     """
-    Node to prepare deployment request for Apex test classes after successful TestDesigner completion.
+    Prepares a deployment request for test classes after TestDesigner agent runs.
+    This is part of the TDD approach where we deploy tests first.
     """
-    print("\n=== PREPARING TEST CLASS DEPLOYMENT REQUEST ===")
+    print("--- Preparing Test Class Deployment Request ---")
     
+    # Get the response from TestDesigner agent
     test_designer_response_dict = state.get("current_test_designer_response")
-    salesforce_session_dict = state.get("salesforce_session")
-    
     if not test_designer_response_dict:
-        print("Cannot prepare test class deployment request - no TestDesigner response.")
-        return state
+        print("Error: No TestDesigner response found to create test deployment request")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Class Deployment Preparation Error: No TestDesigner response found"
+        return updated_state
     
+    # Convert dict to Pydantic model to access structured data
+    try:
+        test_designer_response = TestDesignerResponse(**test_designer_response_dict)
+    except Exception as e:
+        print(f"Error parsing TestDesigner response: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Class Deployment Preparation Error: Could not parse TestDesigner response: {str(e)}"
+        return updated_state
+    
+    if not test_designer_response.success:
+        print("TestDesigner was not successful, cannot proceed with test deployment")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Class Deployment Preparation Error: TestDesigner failed: {test_designer_response.error_message}"
+        return updated_state
+    
+    deployable_apex_code = test_designer_response.deployable_apex_code
+    if not deployable_apex_code:
+        print("No deployable Apex code found in TestDesigner response")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Class Deployment Preparation Error: No deployable Apex code found"
+        return updated_state
+    
+    print(f"Found {len(deployable_apex_code)} test classes to deploy")
+    
+    # Get active Salesforce session
+    salesforce_session_dict = state.get("salesforce_session")
     if not salesforce_session_dict:
-        print("Cannot prepare test class deployment request - no Salesforce session available.")
-        return state
+        print("Error: No active Salesforce session found")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Class Deployment Preparation Error: No active Salesforce session"
+        return updated_state
+    
+    # Convert to SalesforceAuthResponse object
+    try:
+        salesforce_session = SalesforceAuthResponse(**salesforce_session_dict)
+    except Exception as e:
+        print(f"Error parsing Salesforce session: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Class Deployment Preparation Error: Invalid Salesforce session: {str(e)}"
+        return updated_state
+    
+    # Create metadata components for each test class
+    components = []
+    
+    for apex_code in deployable_apex_code:
+        # Extract class name from the Apex code
+        class_name = _extract_apex_class_name(apex_code)
+        
+        # Create metadata component for Apex class
+        # Note: The SalesforceDeployerTool will handle creating both .cls and .cls-meta.xml files
+        components.append({
+            "api_name": class_name,
+            "component_type": "ApexClass",
+            "metadata_xml": apex_code,  # For Apex classes, the code content
+            "directory": "classes",
+            "file_extension": "cls"
+        })
+        
+        print(f"Prepared test class for deployment: {class_name}")
+    
+    # Create deployment request
+    request_id = f"test_deploy_{uuid.uuid4().hex[:8]}"
+    deployment_request = create_multi_component_deployment_request(
+        components_data=components,
+        salesforce_session=salesforce_session,
+        request_id=request_id
+    )
+    
+    # Update state with the deployment request
+    updated_state = state.copy()
+    updated_state["current_test_deployment_request"] = deployment_request.model_dump()
+    
+    print(f"✅ Test class deployment request prepared with {len(components)} components")
+    print(f"Request ID: {request_id}")
+    
+    return updated_state
+
+
+def prepare_test_executor_request(state: AgentWorkforceState) -> AgentWorkforceState:
+    """
+    Prepares a TestExecutor request after test classes have been successfully deployed.
+    This sets up the execution of already-deployed test classes.
+    """
+    print("--- Preparing Test Executor Request ---")
+    
+    # Check that test deployment was successful
+    test_deployment_response_dict = state.get("current_test_deployment_response")
+    if not test_deployment_response_dict:
+        print("Error: No test deployment response found")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Executor Preparation Error: No test deployment response found"
+        return updated_state
+    
+    # Convert dict to Pydantic model
+    try:
+        test_deployment_response = DeploymentResponse(**test_deployment_response_dict)
+    except Exception as e:
+        print(f"Error parsing test deployment response: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Executor Preparation Error: Could not parse test deployment response: {str(e)}"
+        return updated_state
+    
+    if not test_deployment_response.success:
+        print("Test deployment was not successful, cannot execute tests")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Executor Preparation Error: Test deployment failed: {test_deployment_response.error_message}"
+        return updated_state
+    
+    # Get the deployed test class names from TestDesigner response
+    test_designer_response_dict = state.get("current_test_designer_response")
+    if not test_designer_response_dict:
+        print("Error: No TestDesigner response found")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Executor Preparation Error: No TestDesigner response found"
+        return updated_state
     
     try:
-        # Convert dict back to Pydantic model for processing
         test_designer_response = TestDesignerResponse(**test_designer_response_dict)
-        salesforce_session = SalesforceAuthResponse(**salesforce_session_dict)
-        
-        if not test_designer_response.success:
-            print("Cannot prepare test class deployment request - TestDesigner failed.")
-            return state
-        
-        if not test_designer_response.deployable_apex_code:
-            print("Cannot prepare test class deployment request - no deployable Apex code generated.")
-            return state
-        
-        # Create MetadataComponents for each Apex test class
-        from src.schemas.deployment_schemas import MetadataComponent
-        components = []
-        
-        for i, apex_code in enumerate(test_designer_response.deployable_apex_code):
-            # Extract class name from the Apex code
-            class_name = _extract_apex_class_name(apex_code)
-            if not class_name:
-                class_name = f"TestClass{i+1}"
-            
-            # Create .cls file component
-            cls_component = MetadataComponent(
-                component_type="ApexClass",
-                api_name=class_name,
-                metadata_xml=apex_code,
-                directory="classes",
-                file_extension="cls"
-            )
-            components.append(cls_component)
-            
-            # Create .cls-meta.xml file component
-            meta_xml = _create_apex_class_metadata_xml(class_name)
-            meta_component = MetadataComponent(
-                component_type="ApexClass",
-                api_name=class_name,
-                metadata_xml=meta_xml,
-                directory="classes",
-                file_extension="cls-meta.xml"
-            )
-            components.append(meta_component)
-        
-        # Create deployment request for test classes
-        test_deployment_request = DeploymentRequest(
-            request_id=str(uuid.uuid4()),
-            components=components,
-            salesforce_session=salesforce_session
-        )
-        
-        updated_state = state.copy()
-        # Store as separate request to avoid confusion with flow deployment
-        updated_state["current_test_deployment_request"] = test_deployment_request.model_dump()
-        print(f"Prepared test class deployment request with {len(components)} components")
-        
-        return updated_state
-        
     except Exception as e:
-        print(f"Error preparing test class deployment request: {e}")
-        return state
+        print(f"Error parsing TestDesigner response: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Executor Preparation Error: Could not parse TestDesigner response: {str(e)}"
+        return updated_state
+    
+    # Extract test class names from the deployable code
+    test_class_names = []
+    for apex_code in test_designer_response.deployable_apex_code:
+        class_name = _extract_apex_class_name(apex_code)
+        test_class_names.append(class_name)
+    
+    if not test_class_names:
+        print("No test class names found")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Executor Preparation Error: No test class names found"
+        return updated_state
+    
+    # Get active Salesforce session
+    salesforce_session_dict = state.get("salesforce_session")
+    if not salesforce_session_dict:
+        print("Error: No active Salesforce session found")
+        updated_state = state.copy()
+        updated_state["error_message"] = "Test Executor Preparation Error: No active Salesforce session"
+        return updated_state
+    
+    try:
+        salesforce_session = SalesforceAuthResponse(**salesforce_session_dict)
+    except Exception as e:
+        print(f"Error parsing Salesforce session: {e}")
+        updated_state = state.copy()
+        updated_state["error_message"] = f"Test Executor Preparation Error: Invalid Salesforce session: {str(e)}"
+        return updated_state
+    
+    # Get the org alias from the original auth request
+    auth_request_dict = state.get("current_auth_request")
+    org_alias = "unknown"
+    if auth_request_dict:
+        org_alias = auth_request_dict.get("org_alias", "unknown")
+    
+    # Create TestExecutor request
+    request_id = f"test_exec_{uuid.uuid4().hex[:8]}"
+    test_executor_request = TestExecutorRequest(
+        request_id=request_id,
+        salesforce_session=salesforce_session,
+        test_class_names=test_class_names,
+        org_alias=org_alias,
+        timeout_minutes=10,  # Default timeout
+        coverage_target=75.0  # Default coverage target
+    )
+    
+    # Update state with the test executor request
+    updated_state = state.copy()
+    updated_state["current_test_executor_request"] = test_executor_request.model_dump()
+    
+    print(f"✅ Test executor request prepared for {len(test_class_names)} test classes")
+    print(f"Test classes: {test_class_names}")
+    print(f"Request ID: {request_id}")
+    
+    return updated_state
 
 
 def test_class_deployment_node(state: AgentWorkforceState) -> AgentWorkforceState:
@@ -1379,26 +1516,60 @@ def should_continue_after_test_designer(state: AgentWorkforceState) -> str:
 
 def should_continue_after_test_deployment(state: AgentWorkforceState) -> str:
     """
-    Conditional edge function to determine workflow continuation after test deployment.
-    Updated for TDD approach: after successful test deployment, build the Flow.
+    Conditional edge function to determine workflow continuation after test class deployment.
+    If test deployment succeeds, we proceed to Flow Builder (TDD: tests first, then Flow).
+    If test deployment fails, we retry (with limits).
     """
     test_deployment_response = state.get("current_test_deployment_response")
     test_deploy_retry_count = state.get("test_deploy_retry_count", 0)
+    max_retries = 3  # Hardcoded for test deployment retries
     
     if test_deployment_response and test_deployment_response.get("success"):
-        print("✅ Test class deployment successful, proceeding to Flow Builder (TDD approach).")
-        return "flow_builder"
+        print("✅ Test class deployment successful! Proceeding to execute tests...")
+        return "execute_tests"
     else:
-        print(f"❌ Test deployment failed (attempt #{test_deploy_retry_count + 1})")
+        print(f"❌ Test class deployment failed (attempt #{test_deploy_retry_count + 1})")
         
-        # Check if we should retry test deployment
-        max_retries = 3  # Could be configurable
+        # Check if we should retry
         if test_deploy_retry_count < max_retries:
             print(f"🔄 Retrying test deployment ({test_deploy_retry_count + 1}/{max_retries})")
             return "retry_test_deployment"
         else:
-            print("❌ Test deployment failed after max retries, ending workflow.")
+            print(f"❌ Test deployment failed after {max_retries} attempts. Ending workflow.")
             return END
+
+
+def should_continue_after_test_execution(state: AgentWorkforceState) -> str:
+    """
+    Conditional edge function to determine workflow continuation after test execution.
+    
+    The TestExecutor runs the deployed tests and analyzes the results.
+    Since this is TDD, we expect the tests to fail initially (they're testing 
+    Flow functionality that doesn't exist yet).
+    
+    After test execution:
+    - Always proceed to Flow Builder to create the Flow that will make tests pass
+    - Test results provide guidance for what the Flow should do
+    """
+    test_executor_response = state.get("current_test_executor_response")
+    
+    if test_executor_response and test_executor_response.get("success") is not None:
+        # Test execution completed (whether tests passed or failed)
+        test_summary = test_executor_response.get("test_run_summary", {})
+        failures = test_summary.get("failures", 0)
+        successes = test_summary.get("successes", 0)
+        
+        print(f"📊 Test Execution Complete: {successes} passed, {failures} failed")
+        
+        if failures > 0:
+            print("🔴 Tests failed (expected in TDD) - proceeding to Flow Builder to make them pass")
+        else:
+            print("🟢 Tests passed - proceeding to Flow Builder for completion")
+        
+        return "flow_builder"
+    else:
+        print("❌ Test execution failed to complete properly. Ending workflow.")
+        return END
 
 
 def record_test_deploy_cycle(state: AgentWorkforceState) -> AgentWorkforceState:
@@ -1460,7 +1631,7 @@ def prepare_retry_test_deployment_request(state: AgentWorkforceState) -> AgentWo
 def create_workflow() -> StateGraph:
     """
     Creates and configures the LangGraph workflow with Test-Driven Development approach.
-    New flow: Authentication → TestDesigner → Test Deployment → Flow Builder → Flow Deployment → Retry Loop
+    New flow: Authentication → TestDesigner → Test Deployment → TestExecutor → Flow Builder → Flow Deployment → Retry Loop
     """
     # Create the state graph
     workflow = StateGraph(AgentWorkforceState)
@@ -1476,7 +1647,11 @@ def create_workflow() -> StateGraph:
     workflow.add_node("record_test_cycle", record_test_deploy_cycle)
     workflow.add_node("prepare_retry_test_deployment_request", prepare_retry_test_deployment_request)
     
-    # Flow Builder comes after tests are deployed
+    # TestExecutor comes after test deployment
+    workflow.add_node("prepare_test_executor_request", prepare_test_executor_request)
+    workflow.add_node("test_executor", test_executor_node)
+    
+    # Flow Builder comes after test execution
     workflow.add_node("prepare_flow_request", prepare_flow_build_request)
     workflow.add_node("flow_builder", flow_builder_node)
     workflow.add_node("prepare_deployment_request", prepare_deployment_request)
@@ -1527,7 +1702,7 @@ def create_workflow() -> StateGraph:
         "record_test_cycle",
         should_continue_after_test_deployment,
         {
-            "flow_builder": "prepare_flow_request",  # TDD: tests deployed, now build Flow
+            "execute_tests": "prepare_test_executor_request",  # New: go to test execution
             "retry_test_deployment": "prepare_retry_test_deployment_request",
             END: END
         }
@@ -1536,7 +1711,19 @@ def create_workflow() -> StateGraph:
     # Test deployment retry loop
     workflow.add_edge("prepare_retry_test_deployment_request", "prepare_test_deployment_request")
     
-    # 4. Flow Builder workflow (happens after tests are deployed)
+    # 4. TestExecutor workflow (NEW)
+    workflow.add_edge("prepare_test_executor_request", "test_executor")
+    
+    workflow.add_conditional_edges(
+        "test_executor",
+        should_continue_after_test_execution,
+        {
+            "flow_builder": "prepare_flow_request",  # TDD: test execution → Flow Builder
+            END: END
+        }
+    )
+    
+    # 5. Flow Builder workflow (happens after test execution)
     workflow.add_edge("prepare_flow_request", "flow_builder")
     
     workflow.add_conditional_edges(
@@ -1548,7 +1735,7 @@ def create_workflow() -> StateGraph:
         }
     )
     
-    # 5. Flow deployment workflow
+    # 6. Flow deployment workflow
     workflow.add_edge("prepare_deployment_request", "deployment")
     workflow.add_edge("deployment", "record_cycle")
     
@@ -1607,9 +1794,10 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
     1. Authentication
     2. TestDesigner (analyzes requirements and creates test scenarios)
     3. Test Class Deployment (deploys Apex test classes)
-    4. Flow Builder (builds Flow to make tests pass)
-    5. Flow Deployment (deploys the Flow)
-    6. Retry loops for any failures
+    4. TestExecutor (executes deployed tests and analyzes results)
+    5. Flow Builder (builds Flow to make tests pass)
+    6. Flow Deployment (deploys the Flow)
+    7. Retry loops for any failures
     
     Args:
         org_alias: The Salesforce org alias to authenticate to
@@ -1619,7 +1807,7 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         Final state of the workflow
     """
     print(f"\n🚀 Starting Salesforce Agent Workforce (TDD Approach) for org: {org_alias}")
-    print(f"🧪 Test-Driven Development Flow: TestDesigner → Test Deployment → Flow Builder → Flow Deployment")
+    print(f"🧪 Test-Driven Development Flow: TestDesigner → Test Deployment → TestExecutor → Flow Builder → Flow Deployment")
     print(f"🔄 Retry configuration: max_retries={MAX_BUILD_DEPLOY_RETRIES}")
     print("=" * 80)
     
@@ -1645,6 +1833,12 @@ def run_workflow(org_alias: str, project_name: str = "salesforce-agent-workforce
         # Test class deployment state
         "current_test_deployment_request": None,
         "current_test_deployment_response": None,
+        # TestExecutor related state
+        "current_test_executor_request": None,
+        "current_test_executor_response": None,
+        "test_execution_results": None,
+        "code_coverage_results": None,
+        "test_execution_summary": None,
         # Web search related state
         "current_web_search_request": None,
         "current_web_search_response": None,
@@ -1715,8 +1909,9 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     print("🧪 TEST-DRIVEN DEVELOPMENT FLOW:")
     print("   1. Authentication")
     print("   2. TestDesigner → Test Deployment") 
-    print("   3. Flow Builder → Flow Deployment")
-    print("   4. Retry loops as needed")
+    print("   3. TestExecutor → Flow Builder")
+    print("   4. Flow Deployment")
+    print("   5. Retry loops as needed")
     print("")
     
     # Simple retry information
@@ -1802,7 +1997,43 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     else:
         print("⏭️  2b. Test Class Deployment: SKIPPED")
     
-    # Flow building status (runs third in TDD)
+    # TestExecutor status (runs third in TDD)
+    test_executor_response_dict = final_state.get("current_test_executor_response")
+    
+    if skip_tests:
+        print("⏭️  2c. Test Execution: SKIPPED (by user request)")
+    elif test_executor_response_dict:
+        try:
+            test_executor_response = TestExecutorResponse(**test_executor_response_dict)
+            if test_executor_response.success:
+                test_summary = test_executor_response.test_run_summary
+                print("✅ 2c. Test Execution: SUCCESS")
+                if test_summary:
+                    print(f"      Tests Run: {test_summary.tests_ran}")
+                    print(f"      Passed: {test_summary.successes}")
+                    print(f"      Failed: {test_summary.failures}")
+                if test_executor_response.overall_coverage_percentage:
+                    print(f"      Code Coverage: {test_executor_response.overall_coverage_percentage}%")
+                if test_executor_response.coverage_meets_target:
+                    print("      🎯 Coverage target met")
+                else:
+                    print("      ⚠️ Coverage target not met")
+                
+                # Show analysis if tests failed (expected in TDD)
+                if test_executor_response.has_failures():
+                    print("      🔴 Tests failed (expected in TDD - need to build Flow)")
+                    if test_executor_response.failed_test_analysis:
+                        print(f"      Analysis: {len(test_executor_response.failed_test_analysis)} issues identified")
+            else:
+                print("❌ 2c. Test Execution: FAILED")
+                if test_executor_response.error_message:
+                    print(f"      Error: {test_executor_response.error_message}")
+        except Exception:
+            print("❌ 2c. Test Execution: FAILED (Could not parse response)")
+    else:
+        print("⏭️  2c. Test Execution: SKIPPED")
+    
+    # Flow building status (runs fourth in TDD)
     flow_response_dict = final_state.get("current_flow_build_response")
     if flow_response_dict:
         try:
@@ -1823,7 +2054,7 @@ def print_workflow_summary(final_state: AgentWorkforceState) -> None:
     else:
         print("⏭️  3a. Flow Building: SKIPPED")
     
-    # Flow Deployment status (runs fourth in TDD)
+    # Flow Deployment status (runs fifth in TDD)
     deployment_response_dict = final_state.get("current_deployment_response")
     if deployment_response_dict:
         try:
