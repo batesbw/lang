@@ -23,9 +23,9 @@ class UserStoryAnalyzerTool(BaseTool):
     """
     name: str = "user_story_analyzer_tool"
     description: str = (
-        "Analyze user stories and acceptance criteria to identify comprehensive test scenarios "
-        "for Salesforce Flow testing. Generates positive, negative, edge case, and boundary "
-        "test scenarios with detailed test steps and expected outcomes."
+        "Analyze acceptance criteria to identify focused test scenarios for Salesforce Flow testing. "
+        "Generates targeted test scenarios that specifically validate each acceptance criterion "
+        "with minimal test steps and expected outcomes."
     )
     args_schema: Type[BaseModel] = UserStoryAnalysisRequest
     
@@ -38,59 +38,54 @@ class UserStoryAnalyzerTool(BaseTool):
         parser = PydanticOutputParser(pydantic_object=UserStoryAnalysisResponse)
         
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert Salesforce Test Architect specializing in comprehensive test scenario design. 
-Your task is to analyze user stories and acceptance criteria to create detailed test scenarios that ensure thorough testing of Salesforce Flows.
+            ("system", """You are an expert Salesforce Test Architect specializing in focused acceptance criteria validation. 
+Your task is to analyze ONLY the provided acceptance criteria to create specific test scenarios that validate each criterion.
 
 Key responsibilities:
-1. Identify all possible test scenarios including positive, negative, edge cases, and boundary conditions
-2. Create detailed test steps with specific input parameters and expected outcomes
-3. Map test scenarios to acceptance criteria for complete coverage
-4. Consider Flow-specific testing requirements (triggers, variables, error paths)
-5. Apply Salesforce testing best practices
+1. Create test scenarios ONLY for the specific acceptance criteria provided
+2. Map each test scenario directly to one or more acceptance criteria
+3. Define minimal test steps required to validate each acceptance criterion
+4. Focus on the specific outcomes defined in the acceptance criteria
+5. Apply Salesforce testing best practices for acceptance criteria validation
 
-Test Scenario Types to consider:
-- POSITIVE: Happy path scenarios that should succeed
-- NEGATIVE: Error scenarios that should fail gracefully
-- EDGE_CASE: Unusual but valid scenarios
-- BOUNDARY: Testing limits and boundaries
-- ERROR_HANDLING: Testing error conditions and fault paths
-- INTEGRATION: Testing interactions with other systems/objects
+Test Scenario Types to create:
+- ACCEPTANCE_POSITIVE: Scenarios that validate the acceptance criteria are met
+- ACCEPTANCE_NEGATIVE: Scenarios that validate error conditions mentioned in acceptance criteria (if any)
 
-For Flow testing, consider:
-- Input variable validation
-- Flow element testing (screens, decisions, assignments, record operations)
-- Error path testing
-- Bulk data scenarios
-- Permission and security testing
-- Performance under load
+For Flow testing, focus ONLY on:
+- Outcomes specifically mentioned in acceptance criteria
+- Data operations explicitly defined in acceptance criteria
+- Business rules stated in acceptance criteria
+- Validation requirements listed in acceptance criteria
 
 Test Scenario Structure:
-- Clear, descriptive titles
-- Detailed test steps
-- Specific input parameters
-- Expected outcomes and success criteria
-- Prerequisites and test data requirements
-- Coverage areas and Flow elements tested
+- Clear titles that reference specific acceptance criteria
+- Minimal test steps required for validation
+- Expected outcomes matching acceptance criteria
+- Test data requirements sufficient only for acceptance criteria validation
+
+IMPORTANT: Do not create comprehensive test suites. Create targeted scenarios that validate 
+only the acceptance criteria provided. Ignore broader user story context.
 
 {format_instructions}"""),
-            ("human", """Analyze this user story and acceptance criteria for comprehensive test scenario identification:
+            ("human", """Analyze ONLY the acceptance criteria below to create focused test scenarios for validation:
 
-User Story: {user_story}
-
-Acceptance Criteria:
+ACCEPTANCE CRITERIA TO VALIDATE:
 {acceptance_criteria}
 
 Flow Type: {flow_type}
 
-Business Context: {business_context}
+Additional Context (for reference only): {business_context}
 
-Please provide a comprehensive analysis that includes:
-1. Identification of all test scenarios (positive, negative, edge cases, boundaries)
-2. Detailed test steps for each scenario
-3. Specific input parameters and expected outcomes
-4. Test data requirements and prerequisites
-5. Coverage analysis mapping scenarios to acceptance criteria
-6. Recommendations for additional testing considerations""")
+Please provide a focused analysis that includes:
+1. Test scenarios that specifically validate each acceptance criterion
+2. Minimal test steps required to verify each acceptance criterion is met
+3. Expected outcomes that directly match the acceptance criteria
+4. Test data requirements sufficient only for acceptance criteria validation
+5. Direct mapping of each test scenario to specific acceptance criteria
+
+IMPORTANT: Focus ONLY on validating the acceptance criteria listed above. 
+Do not create additional test scenarios beyond what is required to validate these criteria.""")
         ])
         
         return parser, prompt_template
@@ -239,9 +234,9 @@ class ApexTestClassGeneratorTool(BaseTool):
     """
     name: str = "apex_test_class_generator_tool"
     description: str = (
-        "Generate comprehensive Apex test classes for Salesforce Flow testing. "
-        "Creates test methods for each scenario with proper setup, execution, "
-        "and assertion logic following Salesforce testing best practices."
+        "Generate focused Apex test classes for Salesforce Flow testing. "
+        "Creates targeted test methods that validate acceptance criteria with minimal setup, "
+        "focused execution, and specific assertion logic following Salesforce testing best practices."
     )
     args_schema: Type[BaseModel] = ApexCodeGenerationRequest
     
@@ -254,23 +249,23 @@ class ApexTestClassGeneratorTool(BaseTool):
         parser = PydanticOutputParser(pydantic_object=ApexCodeGenerationResponse)
         
         prompt_template = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert Salesforce Apex developer specializing in comprehensive test class creation for Flow testing using Test-Driven Development (TDD).
+            ("system", """You are an expert Salesforce Apex developer specializing in focused test class creation for Flow testing using Test-Driven Development (TDD).
 
-Your task is to generate production-ready Apex test classes that test the EXPECTED OUTCOMES of Salesforce Flows, not direct Flow execution.
+Your task is to generate targeted Apex test classes that test ONLY the EXPECTED OUTCOMES specified in the acceptance criteria of Salesforce Flows.
 
 CRITICAL: This is for Test-Driven Development (TDD) - the Flow does not exist yet!
 DO NOT use Flow.Interview.createInterview() or any direct Flow invocation methods.
-Instead, test the OUTCOMES that the Flow should produce when it's implemented.
+Instead, test ONLY the OUTCOMES specified in the acceptance criteria.
 
 Key requirements:
-1. Generate complete, compilable Apex test classes
+1. Generate targeted, compilable Apex test classes focused on acceptance criteria
 2. Include proper annotations (@isTest, @TestSetup)
-3. Create comprehensive test data setup methods
-4. Test the expected OUTCOMES/SIDE EFFECTS of what the Flow should do
-5. For Record-Triggered Flows: Test record operations (insert/update/delete) and verify expected changes
-6. For Screen Flows: Test the data processing logic that the Flow should implement
+3. Create minimal test data setup methods sufficient for acceptance criteria validation
+4. Test ONLY the expected OUTCOMES/SIDE EFFECTS specified in acceptance criteria
+5. For Record-Triggered Flows: Test only the record operations mentioned in acceptance criteria
+6. For Screen Flows: Test only the data processing logic defined in acceptance criteria
 7. Follow Salesforce testing best practices
-8. Include error handling and negative test cases
+8. Include error handling ONLY if mentioned in acceptance criteria
 9. Ensure proper test isolation and cleanup
 
 Apex Testing Best Practices to follow:
@@ -302,13 +297,13 @@ Code Structure:
 - Proper exception handling for error scenarios
 
 {format_instructions}"""),
-            ("human", """Generate comprehensive Apex test classes for the following Flow testing requirements using TDD approach:
+            ("human", """Generate focused Apex test classes for the following Flow testing requirements using TDD approach:
 
 Flow Name: {flow_name}
 Flow Type: {flow_type}
 Target Objects: {target_objects}
 
-Test Scenarios:
+Test Scenarios (focused on acceptance criteria):
 {test_scenarios}
 
 Salesforce Object Information:
@@ -321,22 +316,23 @@ Generation Options:
 - API Version: {api_version}
 
 IMPORTANT: Use Test-Driven Development approach - DO NOT invoke the Flow directly as it doesn't exist yet.
-Instead, focus on testing the EXPECTED OUTCOMES of the business logic.
+Focus on testing ONLY the EXPECTED OUTCOMES specified in the acceptance criteria.
 
 Please generate:
-1. Complete Apex test class(es) with proper structure that test expected outcomes
-2. @TestSetup method for common test data
-3. Individual test methods for each scenario that verify business logic results
-4. Proper assertions that validate expected changes to records/data
-5. Error handling tests for edge cases and invalid scenarios  
-6. Bulk operation tests that verify scalability
-7. Comments explaining the expected business outcomes being tested
-8. Best practices implementation for TDD
+1. Targeted Apex test class(es) that validate acceptance criteria outcomes
+2. @TestSetup method for minimal required test data
+3. Individual test methods for each acceptance criterion
+4. Targeted assertions that validate acceptance criteria are met
+5. Error handling tests ONLY if specified in acceptance criteria
+6. Bulk operation tests ONLY if mentioned in acceptance criteria
+7. Comments explaining which acceptance criteria are being validated
+8. Best practices implementation for focused TDD
 
-For Record-Triggered Flows: Test record operations (insert/update/delete) and verify the expected field updates, calculations, and related record changes.
-For Screen Flows: Test the data processing logic and validate expected transformations and business rule enforcement.
+For Record-Triggered Flows: Test only the record operations mentioned in acceptance criteria.
+For Screen Flows: Test only the data processing logic defined in acceptance criteria.
 
-Ensure the code tests WHAT SHOULD HAPPEN when the business logic is applied, not HOW the Flow executes.""")
+FOCUS: Generate tests that validate ONLY the acceptance criteria outcomes, not comprehensive Flow testing.
+Ensure the code tests WHAT ACCEPTANCE CRITERIA SPECIFY SHOULD HAPPEN when the business logic is applied.""")
         ])
         
         return parser, prompt_template

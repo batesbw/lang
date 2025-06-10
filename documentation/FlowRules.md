@@ -1,7 +1,3 @@
-**NEVER** put a DML statement inside of a loop
-
-**NEVER** put a SOQL query inside of a loop
-
 ## Performance Rules
 
 ### DML Operations in Loops
@@ -42,3 +38,21 @@ Get Records (query all needed Contacts upfront)
 Loop Element (iterating through Contact collection)
   └─ Assignment/Decision Elements (process each Contact)
 ```
+
+## Deployment and Validation Errors
+
+### You can't use the outputAssignments field with the storeOutputAutomatically field. Remove the value for the outputAssignments field and try again.
+- **Reason**: This error occurs when a Flow element has both:
+outputAssignments field populated with manual assignments
+storeOutputAutomatically field set to true
+These two approaches are mutually exclusive in Salesforce Flows - you cannot use both simultaneously.
+- **Solution**: Option 1: Automatic Storage (storeOutputAutomatically)
+When storeOutputAutomatically="true":
+Salesforce automatically creates variables to store the output values
+Variable names are auto-generated based on the component API names
+No manual outputAssignments needed
+Option 2: Manual Assignments (outputAssignments)
+When using outputAssignments:
+You manually specify which variables receive which values
+You have full control over variable names and assignments
+storeOutputAutomatically should be false or omitted

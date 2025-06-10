@@ -46,14 +46,14 @@ Building an intelligent **multi-agent workforce** using LangChain, LangGraph, an
 - **Tools**: XML parsing libraries, RAG tools for Salesforce best practices.
 
 ### 5. TestDesignerAgent
-- **Purpose**: Designs comprehensive Apex Test Classes to thoroughly test Flow functionality.
+- **Purpose**: Designs focused Apex Test Classes to validate specific acceptance criteria for Flow functionality.
 - **Key Capabilities**:
-    - Analyze user stories and acceptance criteria to identify test scenarios.
-    - Generate Apex Test Classes with appropriate setup, execution, and assertion logic.
-    - Create test data setup and teardown methods.
-    - Design both positive and negative test cases based on business requirements.
-    - Ensure test coverage for all Flow paths and business logic.
-- **Tools**: Apex code generation utilities, Salesforce data model analysis tools, test pattern templates, LLMs for test scenario analysis.
+    - Analyze acceptance criteria to identify targeted test scenarios.
+    - Generate Apex Test Classes that specifically validate each acceptance criterion.
+    - Create minimal test data setup methods sufficient for acceptance criteria validation.
+    - Design test cases that directly map to acceptance criteria outcomes.
+    - Focus on validating specific business requirements rather than comprehensive test coverage.
+- **Tools**: Apex code generation utilities, Salesforce data model analysis tools, acceptance criteria analysis patterns, LLMs for targeted test scenario identification.
 
 ### 6. TestExecutorAgent
 - **Purpose**: Executes Apex tests and analyzes results for comprehensive test reporting.
