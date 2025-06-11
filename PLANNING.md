@@ -148,7 +148,7 @@ LangSmith will be integral for:
 - **Knowledge Base Expansion**: Continuously add to the RAG knowledge base with new patterns, errors, and best practices.
 
 ### Phase 3: Workforce Expansion & Optimization (Future)
-- **New Specialized Agents**: Introduce new agents for other Salesforce metadata types (e.g., `ApexGeneratorAgent`, `LWCBuilderAgent`).
+- **New Specialized Agents**: Introduce new agents for other Salesforce metadata types (e.g., `ApexGeneratorAgent`, `LWCBuilderAgent`, `DatabaseDesignerAgent`).
 - **Performance Optimization**: Profile and optimize agent performance and LLM interactions.
 - **Advanced LangGraph Patterns**: Explore more complex orchestration patterns, such as parallel execution of tasks.
 - **Fine-Tuning**: Investigate fine-tuning models on high-quality interaction data from LangSmith.
@@ -170,6 +170,21 @@ LangSmith will be integral for:
 - **Test Quality (`TestDesignerAgent`)**: Implement validation mechanisms for generated test code and ensure comprehensive test scenarios.
 - **Test Execution Reliability (`TestExecutorAgent`)**: Handle test environment issues, timeout scenarios, and provide clear error reporting.
 - **Scalability of LLM Calls**: Optimize prompts, consider batching, and monitor costs.
+
+## Future Agent Concepts
+
+### `DatabaseDesigner` Agent
+- **Purpose**: Specializes in designing and extending the Salesforce Data Model based on business requirements. This agent would be responsible for tasks like identifying the right standard objects to use, proposing new custom fields, and defining object relationships.
+- **Core Philosophy**: Prioritize using and extending standard Salesforce objects and industry-specific data models (e.g., Service Cloud, Health Cloud, Grantmaking) before resorting to creating new custom objects. This ensures alignment with Salesforce best practices and reduces technical debt.
+- **Specializations (Sub-Agents)**: The `DatabaseDesigner` could be a "manager" agent that delegates to specialized sub-agents. These sub-agents would be experts in specific Salesforce cloud verticals.
+    - **Initial Specialization**: The first implementation will focus on the **Salesforce Grantmaking Solution**, leveraging its specific set of standard and custom objects as the foundation for any data model extensions.
+- **Key Capabilities**:
+    - Analyze natural language requirements for data needs.
+    - Use RAG to query a knowledge base about specific data models (e.g., Grantmaking schema).
+    - Use tools to read the existing schema from a target Salesforce org.
+    - Propose data model changes (new fields, objects) in a structured format.
+    - Justify its proposals by referencing best practices or the need for customization when standard options are insufficient.
+- **Tools**: RAG tools with vectorized documentation, Salesforce Schema API clients.
 
 ## Future Enhancements
 - Self-healing and adaptive workflows in LangGraph.

@@ -163,6 +163,46 @@
 **Priority**: Low | **Estimated Time**: 20-25 hours
 - [ ] Scoping and implementation of an agent that can build Lightning Web Components.
 
+#### Task 3.2.3: `DatabaseDesigner` Agent (Salesforce Grantmaking Specialization)
+**Priority**: Low | **Estimated Time**: 25-35 hours
+
+##### **Sub-Task 3.2.3.1: Research and Knowledge Gathering**
+**Priority**: Low | **Estimated Time**: 6-8 hours
+- [ ] **Action**: Use `WebSearchAgent` or external research to gather detailed documentation on the Salesforce Grants Management data model.
+- [ ] **Action**: Identify all standard objects, custom objects, fields, and relationships that are part of the managed package.
+- [ ] **Action**: Collect best practices for extending the Grants Management data model.
+- [ ] **Deliverable**: Create a structured knowledge base (e.g., Markdown files, text files) that can be vectorized for a RAG tool. Store this in `documentation/salesforce_grantmaking/`.
+
+##### **Sub-Task 3.2.3.2: Define `DatabaseDesigner` Agent Interface & State**
+**Priority**: Low | **Estimated Time**: 2-3 hours
+- [ ] **Input**: Natural language requirements for data model changes (e.g., "We need to track the impact of each grant with key metrics.").
+- [ ] **Output**: A list of proposed changes (new objects, new fields, new relationships) in a structured format (e.g., JSON or Pydantic models). The output should specify if it's using a standard or custom element.
+- [ ] **State**: `data_model_requirements`, `existing_standard_objects`, `proposed_changes`.
+
+##### **Sub-Task 3.2.3.3: Implement `SalesforceSchemaReaderTool`**
+**Priority**: Low | **Estimated Time**: 4-6 hours
+- [ ] **Action**: Create a new tool that can connect to a Salesforce org and read its schema.
+- [ ] **Capabilities**:
+    - List all standard and custom objects.
+    - Describe a specific object (fields, data types, relationships).
+- [ ] **Purpose**: This allows the agent to understand the *current* state of the org's data model before suggesting changes.
+
+##### **Sub-Task 3.2.3.4: Implement `GrantmakingRAGTool`**
+**Priority**: Low | **Estimated Time**: 3-4 hours
+- [ ] **Action**: Create a RAG tool that uses the knowledge base from Task 3.2.3.1.
+- [ ] **Purpose**: The agent will use this tool to answer questions like "What is the standard object for tracking grant applications?" or "What is the best way to model grant budgets?". This promotes using standard features first.
+
+##### **Sub-Task 3.2.3.5: Build `DatabaseDesigner` Agent (Grantmaking)**
+**Priority**: Low | **Estimated Time**: 8-10 hours
+- [ ] **Action**: Create `database_designer_agent.py`.
+- [ ] **Prompts**: Design prompts that guide the LLM to:
+    1.  First, understand the user's requirement.
+    2.  Use the `GrantmakingRAGTool` to see if a standard object/field in the Grantmaking solution can meet the requirement.
+    3.  If not, use the `SalesforceSchemaReaderTool` to check for other relevant standard objects in the org.
+    4.  Only as a last resort, propose creating new custom objects or fields.
+    5.  The agent should "think" step-by-step and justify its recommendations (e.g., "I suggest adding a new field 'ImpactScore__c' to the 'GrantApplication__c' object because...").
+- [ ] **Orchestration**: Initially, this agent can be run standalone. Integration into the main LangGraph orchestrator can be a future step (e.g., the `FlowBuilderAgent` could consult the `DatabaseDesigner` if it detects a missing field).
+
 ---
 
 ### Optimization
